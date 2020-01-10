@@ -17,13 +17,13 @@ security credentials in use at a time.
 
 You must first have a working gpg environment. Such as:
 
-    `gpg -d foo.gpg`
+    gpg -d foo.gpg
 
 That should work before kpk is useful.
 
 # Install
 
-    `make`
+    make
 
 1. sudo copies `kpk.py` to `/usr/local/bin/kpk`.
 2. Shebang is modified to use /usr/local/bin/python3 runtime.
