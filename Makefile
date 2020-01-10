@@ -1,0 +1,5 @@
+default:
+	/usr/local/bin/pip3 install -r requirements.txt
+	sudo cp kpk.py /usr/local/bin/kpk
+	sudo chmod 755 /usr/local/bin/kpk
+	sudo sed -i '' 's/\#\!\/usr\/bin\/env python3/\#\!\/usr\/local\/bin\/python3/g' /usr/local/bin/kpk

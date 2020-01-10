@@ -1,0 +1,4 @@
+docopt
+clipboard
+cryptography
+password-strength

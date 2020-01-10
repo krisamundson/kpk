@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+# Prep
+rm secrets.json
+genpass1="gpg --gen-random --armor 1 32"
+$genpass1 | gpg -e -r krisa@subtend.net > password_subtend.gpg
+$genpass1 | gpg -e -r kamundson@newrelic.com > password_newrelic1.gpg
+$genpass1 | gpg -e -r kamundson@newrelic.com > password_newrelic2.gpg
+cp password_newrelic1.gpg password.gpg
+
+# Basic
+kpk put hi hi # prime db
+kpk put KEYKEY valuevalue
+kpk put lowerkey lowervalue
+kpk put UPPERKEY UPPERVALUE
+
+kpk put GPL "This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/\>."
+
+
+# Complex values
+kpk put RRRRRRRRRRRRRRRRRRRRREALLYLONGNUMBEREDKEY___WITHTHINGS__1222_IN-IT key_is_long
+kpk put value_is_long RRRRRRRRRRRRRRRRRRRRREALLYLONGNUMBEREDKEY___WITHTHINGS__1222_IN-IT 
+kpk put "\`~\!@#\$%^&*()_-+={}[]<>,./?|\\\\'\"" key_is_special
+kpk put value_is_special "\`~\!@#\$%^&*()_-+={}[]<>,./?|\\\\'\"" 
+
+cp password_subtend.gpg password.gpg
+kpk put NO_GPG_SECRET_KEY 'never_works'
+
+cp password_newrelic2.gpg password.gpg
+kpk put GPG_KEY_WRONG_PASS 'never_works'

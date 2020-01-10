@@ -1,0 +1,5 @@
+---
+- When put'ing a new value, if db doesn't exist a new one is initilized but the put operation is not performed.
+- Separate file read/write operations from data manipulation.
+- Two classes: data that getter/setter takes JSON, returns JSON
+
