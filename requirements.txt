@@ -1,4 +1,5 @@
 docopt
 clipboard
 cryptography
+loguru
 password-strength
