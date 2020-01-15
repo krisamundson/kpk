@@ -70,20 +70,25 @@ def db_setup(dbpath):
     return db
 
 
-def good_password(password):
+def good_password(password=None):
     """Check the strength of the encryption password."""
+
+    if password == None or password == '':
+        logger.error('Password empty or None.')
+        return False
+
     policy = password_strength.PasswordPolicy.from_names(strength=0.66)
     check = policy.test(password)
 
     if check:
         strength = password_strength.PasswordStats(password).strength()
         logger.error(
-            f"Password is empty or strength does not meet policy.\n"
+            "Password strength does not meet policy.\n"
             f"Strength: {strength}\n"
             f"Policy:   {check[0].strength}\n"
             f"Details:  https://pypi.org/project/password-strength/"
         )
-        sys.exit(1)
+        return False
 
     return True
 
@@ -100,7 +105,8 @@ def obtain_password():
         sys.exit(1)
 
     cleantext = cleartext.rstrip()
-    good_password(cleantext)
+    if not good_password(cleantext):
+        sys.exit(1)
 
     return cleantext
 
