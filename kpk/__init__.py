@@ -59,10 +59,7 @@ def db_setup(dbpath):
             logger.error(f"Problem creating db. {_e}")
 
         logger.info(f"Initialized new db: {dbpath}")
-        logger.info(
-            "Create a password.gpg in this directory to use as "
-            "encryption key."
-        )
+        logger.info("Create a password.gpg in this directory to use as encryption key.")
         sys.exit()
 
     db["__path__"] = str(dbpath)
@@ -73,8 +70,8 @@ def db_setup(dbpath):
 def good_password(password=None):
     """Check the strength of the encryption password."""
 
-    if password == None or password == '':
-        logger.error('Password empty or None.')
+    if password == None or password == "":
+        logger.error("Password empty or None.")
         return False
 
     policy = password_strength.PasswordPolicy.from_names(strength=0.66)
@@ -190,13 +187,11 @@ def ls(db):
 
 
 def path(db_path):
-    '''Checks valid path for secrets db. Returns default if not specified'''
+    """Checks valid path for secrets db. Returns default if not specified"""
     path = pathlib.Path(args["--dir"]) / "secrets.json"
 
     if not dbpath.parent.is_dir():
-        logger.error(
-            "Error: Directory does not exist or is not a directory."
-        )
+        logger.error("Error: Directory does not exist or is not a directory.")
         sys.exit(1)
     else:
         return pathlib.Path.home() / ".kpk" / "secrets.json"
@@ -210,7 +205,7 @@ def main():
     # For readability below.
     key = args["<key>"]
     put_value = args["<value>"]
-    db_path = path(args['--dir'])
+    db_path = path(args["--dir"])
 
     db = db_setup(dbpath)
     password = obtain_password()
