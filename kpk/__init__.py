@@ -186,7 +186,7 @@ def ls(db):
         print(k)
 
 
-def check_path(directory = None):
+def check_path(directory=None):
     """Checks valid path for secrets db. Returns default if not specified"""
 
     # If no directory specified, return default.
