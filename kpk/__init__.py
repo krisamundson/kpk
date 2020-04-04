@@ -186,15 +186,18 @@ def ls(db):
         print(k)
 
 
-def path(db_path):
+def check_path(directory = None):
     """Checks valid path for secrets db. Returns default if not specified"""
-    path = pathlib.Path(args["--dir"]) / "secrets.json"
 
-    if not dbpath.parent.is_dir():
+    # If no directory specified, return default.
+    if not directory:
+        return pathlib.Path.home() / ".kpk" / "secrets.json"
+
+    if not path.parent.is_dir():
         logger.error("Error: Directory does not exist or is not a directory.")
         sys.exit(1)
-    else:
-        return pathlib.Path.home() / ".kpk" / "secrets.json"
+
+    return pathlib.Path.home() / ".kpk" / "secrets.json"
 
 
 @logger.catch
@@ -205,9 +208,9 @@ def main():
     # For readability below.
     key = args["<key>"]
     put_value = args["<value>"]
-    db_path = path(args["--dir"])
+    db_path = check_path(args["--dir"])
 
-    db = db_setup(dbpath)
+    db = db_setup(db_path)
     password = obtain_password()
     cryptokey = password_to_key(password)
     ciphersuite = Fernet(cryptokey)
