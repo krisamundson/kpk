@@ -16,10 +16,13 @@ Usage:
 
 Options:
     -d <dir>, --dir <dir>  Secret key and db directory.
-    -o, --out        Print value to screen.
-    -h, --help       This help.
-    -v, --verbose    Verbosity.
-    --version        Display version.
+    -o, --out              Print value to screen.
+    -h, --help             This help.
+    -v, --verbose          Verbosity.
+    --version              Display version.
+
+Defaults:
+    * db: ~/.kpk/secrets.json
 """
 
 __author__ = "Kris Amundson"
@@ -193,7 +196,7 @@ def check_path(directory=None):
     if not directory:
         return pathlib.Path.home() / ".kpk" / "secrets.json"
 
-    if not path.parent.is_dir():
+    if not pathlib.parent.is_dir():
         logger.error("Error: Directory does not exist or is not a directory.")
         sys.exit(1)
 
