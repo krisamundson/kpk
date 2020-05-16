@@ -229,9 +229,9 @@ def main():
         else:
             print(get_v)
     elif args["put"]:
-        print(put(db, dbpath, key, put_value, ciphersuite))
+        print(put(db, db_path, key, put_value, ciphersuite))
     elif args["del"]:
-        print(delete(db, dbpath, key))
+        print(delete(db, db_path, key))
     elif args["ls"]:
         ls(db)
 
