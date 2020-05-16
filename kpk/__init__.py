@@ -19,6 +19,7 @@ Options:
     -o, --out              Print value to screen.
     -h, --help             This help.
     -v, --verbose          Verbosity.
+    --debug                Debug.
     --version              Display version.
 
 Defaults:
@@ -38,12 +39,56 @@ import password_strength
 import pathlib
 import subprocess
 import sys
-from loguru import logger
 from cryptography.fernet import Fernet
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.fernet import InvalidToken
+from loguru import logger
+
+
+class Db:
+    """Secrets db."""
+
+    def check_path(directory=None):
+        """Checks valid path for secrets db. Returns default if not specified"""
+
+        # If no directory specified, return default.
+        if not directory:
+            return pathlib.Path.home() / ".kpk" / "secrets.json"
+        else:
+            directory_path = pathlib.Path(directory)
+
+        # Checks for parent directory.
+        if not directory_path.parent.is_dir():
+            raise NotADirectoryError("Parent directory of db path does not exist.")
+
+        return directory_path
+
+
+    def __init__(self, path):
+        """Init secrets db."""
+        self.db = {}
+
+        try:
+            dbpath = self.check_path(path)
+        except NotADirectoryError:
+            sys.exit(1)
+
+        try:
+            self.db = json.load(dbpath.open(mode="r"))
+        except (FileNotFoundError, json.decoder.JSONDecodeError):
+            # DB does not exist or is not JSON, we create a new one.
+            try:
+                self.db = {"__version__": "2"}
+                dbpath.parent.mkdir(parents=False, exist_ok=True)
+                json.dump(self.db, dbpath.open(mode="w"), sort_keys=True, indent=4)
+            except FileNotFoundError as _e:
+                # TODO: make this more useful
+                logger.error(f"Problem creating db. {_e}")
+
+            logger.info(f"Initialized new db: {dbpath}")
+            logger.info("Create a password.gpg in this directory to use as encryption key.")
 
 
 def db_setup(dbpath):
@@ -73,7 +118,7 @@ def db_setup(dbpath):
 def good_password(password=None):
     """Check the strength of the encryption password."""
 
-    if password == None or password == "":
+    if password is None or password == "":
         logger.error("Password empty or None.")
         return False
 
@@ -143,7 +188,7 @@ def get(db, key, ciphersuite):
     try:
         clearvalue = ciphersuite.decrypt(cyphervalue)
     except InvalidToken:
-        logger.error("Decryption failed, likely due to incorect password.")
+        logger.error("Decryption failed, likely due to incorrect password.")
         sys.exit(1)
 
     return clearvalue.decode("utf-8")
@@ -218,10 +263,16 @@ def main():
     cryptokey = password_to_key(password)
     ciphersuite = Fernet(cryptokey)
 
-    if args["--verbose"]:
-        logger.debug(f"CLI Arguments: {args}")
+    debug = args["--debug"]
+    verbose = args["--verbose"]
+
+    if debug:
+        verbose = True
         logger.debug(f"Decrypted password.gpg: {password}")
         logger.debug(f"Cryptokey: {cryptokey}")
+
+    if verbose:
+        logger.info(f"CLI Arguments:\n{args}")
 
     # 'get' output to clipboard or stdout
     if args["get"]:
@@ -238,6 +289,8 @@ def main():
     elif args["ls"]:
         ls(db)
 
+    if debug:
+        logger.debug(f"Database:\n{json.dumps(db, indent=4)}")
 
 if __name__ == "__main__":
     main()
