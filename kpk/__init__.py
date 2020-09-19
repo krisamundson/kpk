@@ -50,45 +50,41 @@ from loguru import logger
 class Db:
     """Secrets db."""
 
-    def check_path(directory=None):
-        """Checks valid path for secrets db. Returns default if not specified"""
+    def create_db(self):
+        """Create db path and file."""
+        self.db = {"__version__": "2"}
+        self.db_dir.mkdir(parents=False, exist_ok=True)
 
-        # If no directory specified, return default.
-        if not directory:
-            return pathlib.Path.home() / ".kpk" / "secrets.json"
-        else:
-            directory_path = pathlib.Path(directory)
+        try:
+            json.dump(self.db, self.db_path.open(mode="w"), sort_keys=True, indent=4)
+        except FileNotFoundError as _e:
+            # TODO: make this more useful
+            logger.error(f"Problem creating db. {_e}")
 
-        # Checks for parent directory.
-        if not directory_path.parent.is_dir():
-            raise NotADirectoryError("Parent directory of db path does not exist.")
-
-        return directory_path
+        logger.info(f"Initialized new db: {self.db_path}")
+        logger.info("Create a password.gpg in this directory to use as encryption key.")
 
 
-    def __init__(self, path):
+    def __init__(self, path=None):
         """Init secrets db."""
         self.db = {}
+        self.db_dir = pathlib.Path.home() / ".kpk"
+        self.db_path = self.db_dir / "secrets.json"
 
-        try:
-            dbpath = self.check_path(path)
-        except NotADirectoryError:
-            sys.exit(1)
-
-        try:
-            self.db = json.load(dbpath.open(mode="r"))
-        except (FileNotFoundError, json.decoder.JSONDecodeError):
-            # DB does not exist or is not JSON, we create a new one.
+        if path:
             try:
-                self.db = {"__version__": "2"}
-                dbpath.parent.mkdir(parents=False, exist_ok=True)
-                json.dump(self.db, dbpath.open(mode="w"), sort_keys=True, indent=4)
-            except FileNotFoundError as _e:
-                # TODO: make this more useful
-                logger.error(f"Problem creating db. {_e}")
+                if path.parent.is_dir() is False:
+                    raise NotADirectoryError("Parent directory of db path does not exist.")
+                self.db_dir = path
+            except AttributeError as _e:
+                logger.error(f'Path provided not usable: {_e}')
 
-            logger.info(f"Initialized new db: {dbpath}")
-            logger.info("Create a password.gpg in this directory to use as encryption key.")
+
+        try:
+            self.db = json.load(self.db_path.open(mode="r"))
+        except (FileNotFoundError, json.decoder.JSONDecodeError):
+            self.create_db()
+            # DB does not exist or is not JSON, we create a new one.
 
 
 def db_setup(dbpath):
@@ -140,20 +136,21 @@ def good_password(password=None):
 
 def obtain_password():
     """Obtain decryption password from a GPG file."""
-    passwordfile = pathlib.Path.home() / ".kpk" / "password.gpg"
+    password_path = pathlib.Path.home() / ".kpk" / "password.gpg"
     try:
         cleartext = subprocess.run(
-            ["gpg", "-d", passwordfile], capture_output=True, check=True
+            ["gpg", "-d", password_path], capture_output=True, check=True
         ).stdout
     except subprocess.CalledProcessError:
         logger.error(f"Problem decrypting password.gpg.")
         sys.exit(1)
 
-    cleantext = cleartext.rstrip()
-    if not good_password(cleantext):
+    password = cleartext.rstrip()
+    # TODO: better way to handle failure. Exception not sys.exit().
+    if not good_password(password):
         sys.exit(1)
 
-    return cleantext
+    return password
 
 
 def password_to_key(password=None):
@@ -248,17 +245,33 @@ def check_path(directory=None):
     return pathlib.Path.home() / ".kpk" / "secrets.json"
 
 
+def genpass():
+    """Generate password."""
+    # genpass1 = 'openssl rand -base64 30'
+    # genpass2 = 'gpg --gen-random --armor 1 30'
+    #
+    # https://stackoverflow.com/a/39596292
+    # import secrets
+    # import string
+    # alphabet = string.ascii_letters + string.digits
+    # password = ''.join(secrets.choice(alphabet) for i in range(20))
+    pass
+
+
 @logger.catch
 def main():
     """Simple Key/Value Store."""
     args = docopt.docopt(__doc__, version=__version__)
 
-    # For readability below.
     key = args["<key>"]
-    put_value = args["<value>"]
-    db_path = check_path(args["--dir"])
+    value = args["<value>"]
 
-    db = db_setup(db_path)
+    try:
+        db_path = pathlib.Path(args["--dir"])
+    except TypeError:
+        db_path = None
+
+    db = Db(db_path)
     password = obtain_password()
     cryptokey = password_to_key(password)
     ciphersuite = Fernet(cryptokey)
@@ -270,27 +283,27 @@ def main():
         verbose = True
         logger.debug(f"Decrypted password.gpg: {password}")
         logger.debug(f"Cryptokey: {cryptokey}")
-
-    if verbose:
-        logger.info(f"CLI Arguments:\n{args}")
-
-    # 'get' output to clipboard or stdout
-    if args["get"]:
-        get_v = get(db, key, ciphersuite)
-        if not args["--out"]:
-            clipboard.copy(get_v)
-            print("COPIED")
-        else:
-            print(get_v)
-    elif args["put"]:
-        print(put(db, db_path, key, put_value, ciphersuite))
-    elif args["del"]:
-        print(delete(db, db_path, key))
-    elif args["ls"]:
-        ls(db)
-
-    if debug:
-        logger.debug(f"Database:\n{json.dumps(db, indent=4)}")
+    #
+    # if verbose:
+    #     logger.info(f"CLI Arguments:\n{args}")
+    #
+    # # 'get' output to clipboard or stdout
+    # if args["get"]:
+    #     get_v = get(db, key, ciphersuite)
+    #     if not args["--out"]:
+    #         clipboard.copy(get_v)
+    #         print("COPIED")
+    #     else:
+    #         print(get_v)
+    # elif args["put"]:
+    #     print(put(db, db_path, key, put_value, ciphersuite))
+    # elif args["del"]:
+    #     print(delete(db, db_path, key))
+    # elif args["ls"]:
+    #     ls(db)
+    #
+    # if debug:
+    #     logger.debug(f"Database:\n{json.dumps(db, indent=4)}")
 
 if __name__ == "__main__":
     main()
