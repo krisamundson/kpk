@@ -2,7 +2,7 @@
 
 # -*- coding: utf-8 -*-
 
-"""test_round1.py
+"""test_functional.py
 
 Testing for kpk. Uses pytest.
 """
