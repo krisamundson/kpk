@@ -18,7 +18,7 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     entry_points={
         'console_scripts': [
-            'kpk = kpk.kpk:main'
+            'kpk = kpk:main'
         ]
     },
     classifiers=[
