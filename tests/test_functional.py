@@ -9,10 +9,14 @@ Testing for kpk. Uses pytest.
 
 
 __author__ = "Kris Amundson"
-__copyright__ = "Copyright (C) 2019 Kris Amundson"
+__copyright__ = "Copyright (C) 2021 Kris Amundson"
 __version__ = "0.1"
 
+from unittest import mock
 import docopt
+import os
+import pathlib
+import pytest
 import sys
 import kpk
 
@@ -24,6 +28,21 @@ def test_python_version():
 def test_docopt():
     args = docopt.docopt(kpk.__doc__, argv=["get", "foo"])
     assert args["get"] is True
+
+
+def test_check_path_valid_environment_variable():
+    os.environ['KPK_DBDIR'] = '/tmp'
+    assert kpk.check_path() == pathlib.PosixPath('/tmp')
+
+
+@mock.patch.dict(os.environ, {"KPK_DBDIR": "/tmp/39a12f8d-506b-41f3-9184-4f956d860b52"})
+def test_check_path_invalid_environment_variable():
+    with pytest.raises(SystemExit) as pytest_wrapped_e:
+        kpk.check_path()
+
+    assert os.environ.get('KPK_DBDIR') == "/tmp/39a12f8d-506b-41f3-9184-4f956d860b52"
+    assert pytest_wrapped_e.type == SystemExit
+    assert pytest_wrapped_e.value.code == 1
 
 
 def test_good_passwords():
