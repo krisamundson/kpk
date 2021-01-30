@@ -15,7 +15,7 @@ Usage:
     kpk --version
 
 Options:
-    -d <dir>, --dir <dir>  Secret key and db directory.
+    -d <dir>, --dir <dir>  Secret key and db directory (env: KPK_DBDIR).
     -o, --out              Print value to screen.
     -h, --help             This help.
     -v, --verbose          Verbosity.
@@ -26,7 +26,7 @@ Defaults:
 """
 
 __author__ = "Kris Amundson"
-__copyright__ = "Copyright (C) 2020 Kris Amundson"
+__copyright__ = "Copyright (C) 2021 Kris Amundson"
 __license__ = "GPL-3.0-or-later"
 __version__ = "2.0.1"
 
@@ -34,6 +34,7 @@ import base64
 import clipboard
 import docopt
 import json
+import os
 import password_strength
 import pathlib
 import subprocess
@@ -45,6 +46,8 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.fernet import InvalidToken
 
+class KpkError(Exception):
+    pass
 
 def db_setup(dbpath):
     """Setup db -- load existing or create new."""
@@ -190,17 +193,28 @@ def ls(db):
 
 
 def check_path(directory=None):
-    """Checks valid path for secrets db. Returns default if not specified"""
+    """Check for valid db path, including KPK_DBDIR envvar. Returns a default."""
 
-    # If no directory specified, return default.
     if not directory:
-        return pathlib.Path.home() / ".kpk" / "secrets.json"
+        directory = os.environ.get("KPK_DBDIR")
 
-    if not pathlib.parent.is_dir():
-        logger.error("Error: Directory does not exist or is not a directory.")
-        sys.exit(1)
+    if directory:
+        directory_path = pathlib.Path(directory)
 
-    return pathlib.Path.home() / ".kpk" / "secrets.json"
+        if directory_path.is_dir():
+            return directory_path
+        else:
+            logger.error(f'Error: Check path failed, {directory} invalid DB directory.')
+            sys.exit(1)
+    else:
+        # Return default path.
+        directory_path = pathlib.Path.home() / ".kpk"
+
+        if directory_path.is_dir():
+            return directory_path / "secrets.json"
+        else:
+            logger.error(f'Error: Check path failed, {directory} invalid DB directory.')
+            sys.exit(1)
 
 
 @logger.catch
@@ -211,6 +225,7 @@ def main():
     # For readability below.
     key = args["<key>"]
     put_value = args["<value>"]
+
     db_path = check_path(args["--dir"])
 
     db = db_setup(db_path)
