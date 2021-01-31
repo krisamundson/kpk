@@ -30,8 +30,14 @@ def test_docopt():
     assert args["get"] is True
 
 
+def test_check_path_default():
+    path = str(kpk.check_path())
+    home = os.environ.get("HOME")
+    assert path == home + "/.kpk/secrets.json"
+
+
+@mock.patch.dict(os.environ, {"KPK_DBDIR": "/tmp"})
 def test_check_path_valid_environment_variable():
-    os.environ['KPK_DBDIR'] = '/tmp'
     assert kpk.check_path() == pathlib.PosixPath('/tmp')
 
 
