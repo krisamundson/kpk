@@ -193,7 +193,9 @@ def ls(db):
 
 
 def check_path(directory=None):
-    """Check for valid db path, including KPK_DBDIR envvar. Returns a default."""
+    """Check for valid db path, including KPK_DBDIR envvar and default. Returns Path object."""
+
+    default_path = pathlib.Path.home() / ".kpk"
 
     if not directory:
         directory = os.environ.get("KPK_DBDIR")
@@ -208,7 +210,7 @@ def check_path(directory=None):
             sys.exit(1)
     else:
         # Return default path.
-        directory_path = pathlib.Path.home() / ".kpk"
+        directory_path = default_path
 
         if directory_path.is_dir():
             return directory_path / "secrets.json"
