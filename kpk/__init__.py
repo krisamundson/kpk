@@ -46,8 +46,10 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.fernet import InvalidToken
 
+
 class KpkError(Exception):
     pass
+
 
 def db_setup(dbpath):
     """Setup db -- load existing or create new."""
@@ -76,7 +78,7 @@ def db_setup(dbpath):
 def good_password(password=None):
     """Check the strength of the encryption password."""
 
-    if password == None or password == "":
+    if password is None or password == "":
         logger.error("Password empty or None.")
         return False
 
@@ -87,9 +89,9 @@ def good_password(password=None):
         strength = password_strength.PasswordStats(password).strength()
         logger.error(
             "Password strength does not meet policy.\n"
-            f"Strength: {strength}\n"
-            f"Policy:   {check[0].strength}\n"
-            f"Details:  https://pypi.org/project/password-strength/"
+            f" Strength: {strength}\n"
+            f" Policy:   {check[0].strength}\n"
+            f" Details:  https://pypi.org/project/password-strength/"
         )
         return False
 
@@ -136,7 +138,6 @@ def password_to_key(password=None):
 
 def get(db, key, ciphersuite):
     """Get value from the db given a key."""
-
     try:
         cyphervalue = db[key].encode("utf-8")
     except KeyError:
