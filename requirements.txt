@@ -3,3 +3,4 @@ clipboard
 cryptography
 loguru
 password-strength
+pyyaml
