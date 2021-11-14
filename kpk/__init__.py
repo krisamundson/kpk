@@ -11,6 +11,7 @@ Usage:
     kpk put <key> <value> [options]
     kpk del <key> [options]
     kpk ls [options]
+    kpk import <file>
     kpk (-h | --help)
     kpk --version
 
@@ -37,6 +38,7 @@ import json
 import os
 import password_strength
 import pathlib
+import yaml
 import subprocess
 import sys
 from loguru import logger
@@ -45,10 +47,24 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.fernet import InvalidToken
+from yaml import Loader, Dumper
 
 
 class KpkError(Exception):
     pass
+
+
+class Import:
+    """Imported YAML file."""
+    def __init__(self, path=None):
+        self.src = pathlib.Path(path)
+        self.data = None
+
+        if not self.src.is_file():
+            raise FileNotFoundError("Import file not found.")
+
+        self.data = yaml.safe_load_all(self.src.read_text())
+        print(type(self.data))
 
 
 def db_setup(dbpath):
@@ -228,6 +244,7 @@ def main():
     # For readability below.
     key = args["<key>"]
     put_value = args["<value>"]
+    import_file = args["<file>"]
 
     db_path = check_path(args["--dir"])
 
@@ -255,6 +272,8 @@ def main():
         print(delete(db, db_path, key))
     elif args["ls"]:
         ls(db)
+    elif args["import"]:
+        import_data = Import(import_file)
 
 
 if __name__ == "__main__":
