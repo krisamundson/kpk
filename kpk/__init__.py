@@ -47,7 +47,6 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.fernet import InvalidToken
-from yaml import Loader, Dumper
 
 
 class KpkError(Exception):
@@ -63,8 +62,7 @@ class Import:
         if not self.src.is_file():
             raise FileNotFoundError("Import file not found.")
 
-        self.data = yaml.safe_load_all(self.src.read_text())
-        print(type(self.data))
+        self.data = list(yaml.safe_load_all(self.src.read_text()))
 
 
 def db_setup(dbpath):
@@ -163,7 +161,7 @@ def get(db, key, ciphersuite):
     try:
         clearvalue = ciphersuite.decrypt(cyphervalue)
     except InvalidToken:
-        logger.error("Decryption failed, likely due to incorect password.")
+        logger.error("Decryption failed, likely due to incorrect password.")
         sys.exit(1)
 
     return clearvalue.decode("utf-8")
@@ -178,7 +176,7 @@ def put(db, dbpath, k, v, ciphersuite):
     try:
         json.dump(db, dbpath.open(mode="w"), sort_keys=True, indent=4)
     except FileNotFoundError:
-        logger.error("DB open failed due to file not existing.")
+        logger.error("DB open failed, file not found.")
         sys.exit(1)
 
     return "OK"
