@@ -1,30 +1,5 @@
 #!/usr/bin/env python
 
-# -*- coding: utf-8 -*-
-
-
-"""
-Kris Password Keystore.
-
-Usage:
-    kpk get <key> [options]
-    kpk put <key> <value> [options]
-    kpk del <key> [options]
-    kpk ls [options]
-    kpk import <file>
-    kpk (-h | --help)
-    kpk --version
-
-Options:
-    -d <dir>, --dir <dir>  Secret key and db directory (env: KPK_DBDIR).
-    -o, --out              Print value to screen.
-    -h, --help             This help.
-    -v, --verbose          Verbosity.
-    --version              Display version.
-
-Defaults:
-    * db: ~/.kpk/secrets.json
-"""
 
 __author__ = "Kris Amundson"
 __copyright__ = "Copyright (C) 2024 Kris Amundson"
