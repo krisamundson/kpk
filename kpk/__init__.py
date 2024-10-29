@@ -305,7 +305,6 @@ def set(key, value, prompt):
     if prompt:
         value = getpass("Value:")
 
-    # TODO
     logger.debug(db_path)
     logger.debug(key)
     logger.debug(value)
