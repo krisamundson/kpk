@@ -1,4 +1,4 @@
-docopt
+click
 clipboard
 cryptography
 loguru

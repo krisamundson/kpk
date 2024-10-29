@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 # -*- coding: utf-8 -*-
 
@@ -27,14 +27,15 @@ Defaults:
 """
 
 __author__ = "Kris Amundson"
-__copyright__ = "Copyright (C) 2021 Kris Amundson"
+__copyright__ = "Copyright (C) 2024 Kris Amundson"
 __license__ = "GPL-3.0-or-later"
-__version__ = "2.0.1"
+__version__ = "2.2.1"
 
 import base64
 import clipboard
-import docopt
+import click
 import json
+import logging
 import os
 import password_strength
 import pathlib
@@ -47,6 +48,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.fernet import InvalidToken
+from getpass import getpass
 
 
 class KpkError(Exception):
@@ -55,6 +57,7 @@ class KpkError(Exception):
 
 class Import:
     """Imported YAML file."""
+
     def __init__(self, path=None):
         self.src = pathlib.Path(path)
         self.data = None
@@ -150,23 +153,6 @@ def password_to_key(password=None):
     return key
 
 
-def get(db, key, ciphersuite):
-    """Get value from the db given a key."""
-    try:
-        cyphervalue = db[key].encode("utf-8")
-    except KeyError:
-        logger.warning(f"Key '{key}' not found.")
-        sys.exit(1)
-
-    try:
-        clearvalue = ciphersuite.decrypt(cyphervalue)
-    except InvalidToken:
-        logger.error("Decryption failed, likely due to incorrect password.")
-        sys.exit(1)
-
-    return clearvalue.decode("utf-8")
-
-
 def put(db, dbpath, k, v, ciphersuite):
     """Put a value into the database and write it."""
 
@@ -180,31 +166,6 @@ def put(db, dbpath, k, v, ciphersuite):
         sys.exit(1)
 
     return "OK"
-
-
-def delete(db, dbpath, k):
-    """Delete a value from the database and write it."""
-
-    try:
-        del db[k]
-    except KeyError:
-        logger.warning("Value not in db.")
-        sys.exit(0)
-
-    try:
-        json.dump(db, dbpath.open(mode="w"), sort_keys=True, indent=4)
-    except FileNotFoundError:
-        logger.error("DB open failed due to file not existing.")
-        sys.exit(1)
-
-    return "OK"
-
-
-def ls(db):
-    """List db keys and values."""
-    print("\n═════════════ KEYS ═════════════")
-    for k in db.keys():
-        print(k)
 
 
 def check_path(directory=None):
@@ -221,7 +182,7 @@ def check_path(directory=None):
         if directory_path.is_dir():
             return directory_path
         else:
-            logger.error(f'Error: Check path failed, {directory} invalid DB directory.')
+            logger.error(f"Error: Check path failed, {directory} invalid DB directory.")
             sys.exit(1)
     else:
         # Return default path.
@@ -230,49 +191,146 @@ def check_path(directory=None):
         if directory_path.is_dir():
             return directory_path / "secrets.json"
         else:
-            logger.error(f'Error: Check path failed, {directory} invalid DB directory.')
+            logger.error(f"Error: Check path failed, {directory} invalid DB directory.")
             sys.exit(1)
 
 
-@logger.catch
-def main():
-    """Simple Key/Value Store."""
-    args = docopt.docopt(__doc__, version=__version__)
+# @logger.catch
+@click.group()
+@click.option("--debug", "-d", is_flag=True, default=False)
+def cli(debug):
+    # Logging Config
+    logger.remove(0)
+    if not debug:
+        logger.add(sys.stdout, level="INFO")
+    else:
+        logger.add(sys.stderr, level="DEBUG")
+        logger.debug("Debug logging enabled")
+        logging.basicConfig(level=logging.DEBUG)
+    pass
 
-    # For readability below.
-    key = args["<key>"]
-    put_value = args["<value>"]
-    import_file = args["<file>"]
 
-    db_path = check_path(args["--dir"])
-
+@click.command()
+@click.argument("key", type=str, required=True)
+def delete(key):
+    """Delete a value from the database."""
+    db_path = check_path()
     db = db_setup(db_path)
+
+    try:
+        logger.debug(f"Cypher Value: {db[key]}")
+        del db[key]
+    except KeyError:
+        logger.warning("Value not in db.")
+        sys.exit(2)
+
+    try:
+        json.dump(db, db_path.open(mode="w"), sort_keys=True, indent=4)
+    except FileNotFoundError:
+        logger.error("DB open failed due to file not existing.")
+        sys.exit(1)
+
+    logger.info("OK")
+
+
+@click.command()
+@click.argument("key", type=str, required=True)
+@click.option("--out", "-o", is_flag=True, default=False, help="Print to screen")
+def get(key, out):
+    """Given a key, get the value."""
+    db_path = check_path()
+    db = db_setup(db_path)
+
     password = obtain_password()
     cryptokey = password_to_key(password)
     ciphersuite = Fernet(cryptokey)
 
-    if args["--verbose"]:
-        logger.debug(f"CLI Arguments: {args}")
-        logger.debug(f"Decrypted password.gpg: {password}")
-        logger.debug(f"Cryptokey: {cryptokey}")
+    logger.debug(f"Password: {password}")
+    logger.debug(f"Cryptokey: {cryptokey}")
 
-    # 'get' output to clipboard or stdout
-    if args["get"]:
-        get_v = get(db, key, ciphersuite)
-        if not args["--out"]:
-            clipboard.copy(get_v)
-            print("COPIED")
-        else:
-            print(get_v)
-    elif args["put"]:
-        print(put(db, db_path, key, put_value, ciphersuite))
-    elif args["del"]:
-        print(delete(db, db_path, key))
-    elif args["ls"]:
-        ls(db)
-    elif args["import"]:
-        import_data = Import(import_file)
+    try:
+        cyphervalue = db[key].encode("utf-8")
+        logger.debug(f"Cypher Value: {cyphervalue}")
+    except KeyError:
+        logger.warning(f"Key '{key}' not found.")
+        sys.exit(2)
+
+
+    try:
+        clearvalue = ciphersuite.decrypt(cyphervalue).decode("utf-8")
+        logger.debug(f"Clear Value: {clearvalue}")
+    except InvalidToken:
+        logger.error("Decryption failed, likely due to incorrect password.")
+        sys.exit(1)
+
+
+    if not out:
+        logger.debug("Copying to clipboard")
+        clipboard.copy(clearvalue)
+        logger.info("COPIED")
+    else:
+        print(clearvalue)
+
+
+@click.command()
+def ls():
+    """Print keys in current kpk database."""
+    db_path = check_path()
+    db = db_setup(db_path)
+
+    logger.debug(
+        f"db_path: {db_path}\n"
+    )
+
+    keys = "\n═════════════════════ KEYS ══════════════════════\n"
+    for k in db.keys():
+        keys += f"{k}\n"
+
+    logger.info(keys)
+
+
+@click.command()
+@click.argument("key", type=str, required=True)
+@click.argument("value", type=str, required=False)
+@click.option("--prompt", "-p", is_flag=True, default=False, help="Prompt for value.")
+def set(key, value, prompt):
+    """Given a key, write the value."""
+    db_path = check_path()
+    db = db_setup(db_path)
+
+    if value and prompt:
+        logger.error("Can not ask to prompt AND provide a value.")
+        sys.exit(1)
+
+    if prompt:
+        value = getpass("Value:")
+
+    # TODO
+    logger.debug(db_path)
+    logger.debug(key)
+    logger.debug(value)
+
+    password = obtain_password()
+    cryptokey = password_to_key(password)
+    ciphersuite = Fernet(cryptokey)
+
+    cipherbytes = ciphersuite.encrypt(value.encode())
+    db[key] = cipherbytes.decode("utf-8")
+
+    try:
+        json.dump(db, db_path.open(mode="w"), sort_keys=True, indent=4)
+    except FileNotFoundError:
+        logger.error("DB open failed, file not found.")
+        sys.exit(1)
+
+    logger.info("OK")
+
+
+cli.add_command(delete)
+cli.add_command(ls)
+cli.add_command(get)
+cli.add_command(set)
 
 
 if __name__ == "__main__":
-    main()
+    cli()
