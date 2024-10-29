@@ -230,14 +230,12 @@ def get(key, out):
         logger.warning(f"Key '{key}' not found.")
         sys.exit(2)
 
-
     try:
         clearvalue = ciphersuite.decrypt(cyphervalue).decode("utf-8")
         logger.debug(f"Clear Value: {clearvalue}")
     except InvalidToken:
         logger.error("Decryption failed, likely due to incorrect password.")
         sys.exit(1)
-
 
     if not out:
         logger.debug("Copying to clipboard")
@@ -253,9 +251,7 @@ def ls():
     db_path = check_path()
     db = db_setup(db_path)
 
-    logger.debug(
-        f"db_path: {db_path}\n"
-    )
+    logger.debug(f"db_path: {db_path}\n")
 
     keys = "\n═════════════════════ KEYS ══════════════════════\n"
     for k in db.keys():
