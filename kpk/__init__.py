@@ -170,6 +170,17 @@ def check_path(directory=None):
             sys.exit(1)
 
 
+def hash_string(data: str):
+    """Given data, return a hash of it"""
+    bytestring = data.encode('utf-8')
+    hash_algo = hashes.SHA256()
+
+    digest = hashes.Hash(hash_algo)
+    digest.update(bytestring)
+
+    return digest.finalize().hex()
+
+
 # @logger.catch
 @click.group()
 @click.option("--debug", "-d", is_flag=True, default=False)
@@ -216,6 +227,8 @@ def get(key, out):
     db_path = check_path()
     db = db_setup(db_path)
 
+    hashed_key = hash_string(key)
+
     password = obtain_password()
     cryptokey = password_to_key(password)
     ciphersuite = Fernet(cryptokey)
@@ -224,7 +237,7 @@ def get(key, out):
     logger.debug(f"Cryptokey: {cryptokey}")
 
     try:
-        cyphervalue = db[key].encode("utf-8")
+        cyphervalue = db[hashed_key].encode("utf-8")
         logger.debug(f"Cypher Value: {cyphervalue}")
     except KeyError:
         logger.warning(f"Key '{key}' not found.")
