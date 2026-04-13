@@ -222,6 +222,10 @@ def main(debug: bool):
 @click.argument("key", type=str, required=True)
 def delete(key):
     """Delete a value from the database."""
+    if key.startswith("__"):
+        logger.error(f"Key '{key}' is reserved.")
+        sys.exit(1)
+
     db_path = check_path()
     db = db_setup(db_path)
 
@@ -305,6 +309,10 @@ def ls():
 @click.option("--prompt", "-p", is_flag=True, default=False, help="Prompt for value.")
 def set(key, value, prompt):
     """Given a key, write the value."""
+    if key.startswith("__"):
+        logger.error(f"Key '{key}' is reserved.")
+        sys.exit(1)
+
     db_path = check_path()
     db = db_setup(db_path)
 
@@ -470,7 +478,7 @@ def import_cmd(file):
     ciphersuite = Fernet(cryptokey)
 
     for k, v in data.items():
-        if k in skip_keys:
+        if k.startswith("__") or k in skip_keys:
             continue
         import_cleartext = v["value"] if isinstance(v, dict) else v
         import_ts = v.get("updated") if isinstance(v, dict) else None
