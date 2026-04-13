@@ -23,10 +23,9 @@ That should work before kpk is useful.
 
 # Install
 
-    make
+    pip install -e .
 
-1. sudo copies `kpk.py` to `/usr/local/bin/kpk`.
-2. Shebang is modified to use /usr/local/bin/python3 runtime.
+This installs kpk in editable mode into your active Python virtual environment, making the `kpk` command available on your PATH.
 
 # Password
 

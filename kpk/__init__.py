@@ -4,11 +4,12 @@
 __author__ = "Kris Amundson"
 __copyright__ = "Copyright (C) 2024 Kris Amundson"
 __license__ = "GPL-3.0-or-later"
-__version__ = "2.2.1"
+__version__ = "2.3.0"
 
 import base64
 import clipboard
 import click
+import fcntl
 import json
 import logging
 import os
@@ -43,6 +44,13 @@ class Import:
         self.data = list(yaml.safe_load_all(self.src.read_text()))
 
 
+def db_write(dbpath, db):
+    """Write db to disk with an exclusive file lock."""
+    with open(dbpath, "w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        json.dump(db, f, sort_keys=True, indent=4)
+
+
 def db_setup(dbpath):
     """Setup db -- load existing or create new."""
 
@@ -53,7 +61,7 @@ def db_setup(dbpath):
         try:
             db = {"__version__": "2"}
             dbpath.parent.mkdir(parents=False, exist_ok=True)
-            json.dump(db, dbpath.open(mode="w"), sort_keys=True, indent=4)
+            db_write(dbpath, db)
         except FileNotFoundError as _e:
             # TODO: make this more useful
             logger.error(f"Problem creating db. {_e}")
@@ -128,20 +136,6 @@ def password_to_key(password=None):
     return key
 
 
-def put(db, dbpath, k, v, ciphersuite):
-    """Put a value into the database and write it."""
-
-    cipherbytes = ciphersuite.encrypt(v.encode())
-    db[k] = cipherbytes.decode("utf-8")
-
-    try:
-        json.dump(db, dbpath.open(mode="w"), sort_keys=True, indent=4)
-    except FileNotFoundError:
-        logger.error("DB open failed, file not found.")
-        sys.exit(1)
-
-    return "OK"
-
 
 def check_path(directory=None):
     """Check for valid db path, including KPK_DBDIR envvar and default. Returns Path object."""
@@ -155,7 +149,7 @@ def check_path(directory=None):
         directory_path = pathlib.Path(directory)
 
         if directory_path.is_dir():
-            return directory_path
+            return directory_path / "secrets.json"
         else:
             logger.error(f"Error: Check path failed, {directory} invalid DB directory.")
             sys.exit(1)
@@ -173,7 +167,8 @@ def check_path(directory=None):
 # @logger.catch
 @click.group()
 @click.option("--debug", "-d", is_flag=True, default=False)
-def cli(debug):
+@click.version_option(__version__, "--version", "-V")
+def main(debug: bool):
     # Logging Config
     logger.remove(0)
     if not debug:
@@ -182,8 +177,6 @@ def cli(debug):
         logger.add(sys.stderr, level="DEBUG")
         logger.debug("Debug logging enabled")
         logging.basicConfig(level=logging.DEBUG)
-    pass
-
 
 @click.command()
 @click.argument("key", type=str, required=True)
@@ -200,7 +193,7 @@ def delete(key):
         sys.exit(2)
 
     try:
-        json.dump(db, db_path.open(mode="w"), sort_keys=True, indent=4)
+        db_write(db_path, db)
     except FileNotFoundError:
         logger.error("DB open failed due to file not existing.")
         sys.exit(1)
@@ -276,6 +269,10 @@ def set(key, value, prompt):
     if prompt:
         value = getpass("Value:")
 
+    if not value:
+        logger.error("No value provided. Pass a value argument or use --prompt.")
+        sys.exit(1)
+
     logger.debug(db_path)
     logger.debug(key)
     logger.debug(value)
@@ -288,7 +285,7 @@ def set(key, value, prompt):
     db[key] = cipherbytes.decode("utf-8")
 
     try:
-        json.dump(db, db_path.open(mode="w"), sort_keys=True, indent=4)
+        db_write(db_path, db)
     except FileNotFoundError:
         logger.error("DB open failed, file not found.")
         sys.exit(1)
@@ -296,11 +293,12 @@ def set(key, value, prompt):
     logger.info("OK")
 
 
-cli.add_command(delete)
-cli.add_command(ls)
-cli.add_command(get)
-cli.add_command(set)
+main.add_command(delete)
+main.add_command(ls)
+main.add_command(get)
+main.add_command(set)
 
+# main = cli
 
 if __name__ == "__main__":
-    cli()
+    main()
