@@ -4,12 +4,11 @@
 __author__ = "Kris Amundson"
 __copyright__ = "Copyright (C) 2024 Kris Amundson"
 __license__ = "GPL-3.0-or-later"
-__version__ = "2.3.3"
+__version__ = "2.4.0"
 
 import base64
 import clipboard
 import click
-import fcntl
 import json
 import logging
 import os
@@ -72,29 +71,54 @@ def entry_make(ciphertext):
     return {"value": ciphertext, "updated": now_iso()}
 
 
+def gpg_decrypt_file(filepath):
+    """Decrypt a GPG-encrypted file, return raw bytes."""
+    return subprocess.run(
+        ["gpg", "-d", str(filepath)], capture_output=True, check=True
+    ).stdout
+
+
+def gpg_encrypt_file(filepath, data):
+    """Encrypt data bytes and write to a GPG file."""
+    subprocess.run(
+        ["gpg", "--yes", "--armor", "-e", "--default-recipient-self", "-o", str(filepath)],
+        input=data, capture_output=True, check=True
+    )
+
+
 def db_write(dbpath, db):
-    """Write db to disk with an exclusive file lock."""
-    with open(dbpath, "w") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        json.dump(db, f, sort_keys=True, indent=4)
+    """Write db to disk as GPG-encrypted JSON."""
+    db_clean = {k: v for k, v in db.items() if k != "__path__"}
+    json_bytes = json.dumps(db_clean, sort_keys=True, indent=4).encode()
+    try:
+        gpg_encrypt_file(dbpath, json_bytes)
+    except subprocess.CalledProcessError:
+        logger.error("GPG encryption failed.")
+        sys.exit(1)
 
 
 def db_setup(dbpath, migrate=False):
     """Setup db -- load existing or create new.
 
     If migrate=True, upgrade older DB versions to the current version.
+    The db file is GPG-encrypted on disk.
     """
 
-    try:
-        db = json.load(dbpath.open(mode="r"))
-    except (FileNotFoundError, json.decoder.JSONDecodeError):
-        # DB does not exist or is not JSON, we create a new one.
+    if dbpath.exists():
+        try:
+            cleartext = gpg_decrypt_file(dbpath)
+            db = json.loads(cleartext)
+        except (subprocess.CalledProcessError, json.JSONDecodeError):
+            db = None
+    else:
+        db = None
+
+    if db is None:
         try:
             db = {"__version__": DB_VERSION}
             dbpath.parent.mkdir(parents=False, exist_ok=True)
             db_write(dbpath, db)
-        except FileNotFoundError as _e:
-            # TODO: make this more useful
+        except (FileNotFoundError, subprocess.CalledProcessError) as _e:
             logger.error(f"Problem creating db. {_e}")
 
         logger.info(f"Initialized new db: {dbpath}")
@@ -166,8 +190,8 @@ def password_to_key(password=None):
     hkdf = HKDF(
         algorithm=hashes.SHA256(),
         length=32,
-        salt=None,
-        info=None,
+        salt=b"hacktheplanet",
+        info=b"RISC architecture is gonna change everything",
         backend=default_backend(),
     )
 
@@ -189,7 +213,7 @@ def check_path(directory=None):
         directory_path = pathlib.Path(directory)
 
         if directory_path.is_dir():
-            return directory_path / "secrets.json"
+            return directory_path / "secrets.json.gpg"
         else:
             logger.error(f"Error: Check path failed, {directory} invalid DB directory.")
             sys.exit(1)
@@ -198,7 +222,7 @@ def check_path(directory=None):
         directory_path = default_path
 
         if directory_path.is_dir():
-            return directory_path / "secrets.json"
+            return directory_path / "secrets.json.gpg"
         else:
             logger.error(f"Error: Check path failed, {directory} invalid DB directory.")
             sys.exit(1)
@@ -236,12 +260,7 @@ def delete(key):
         logger.warning("Value not in db.")
         sys.exit(2)
 
-    try:
-        db_write(db_path, db)
-    except FileNotFoundError:
-        logger.error("DB open failed due to file not existing.")
-        sys.exit(1)
-
+    db_write(db_path, db)
     logger.info("OK")
 
 
@@ -338,12 +357,7 @@ def set(key, value, prompt):
     cipherbytes = ciphersuite.encrypt(value.encode())
     db[key] = entry_make(cipherbytes.decode("utf-8"))
 
-    try:
-        db_write(db_path, db)
-    except FileNotFoundError:
-        logger.error("DB open failed, file not found.")
-        sys.exit(1)
-
+    db_write(db_path, db)
     logger.info("OK")
 
 
@@ -506,12 +520,7 @@ def import_cmd(file, use_yaml):
 
     db["__version__"] = DB_VERSION
 
-    try:
-        db_write(db_path, db)
-    except FileNotFoundError:
-        logger.error("DB open failed, file not found.")
-        sys.exit(1)
-
+    db_write(db_path, db)
     logger.info(f"Imported {len(data)} key(s). OK")
 
 

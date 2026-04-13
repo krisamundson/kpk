@@ -39,6 +39,20 @@ def _loguru_safe_remove():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _mock_gpg_file_ops():
+    """Mock GPG file I/O to read/write plaintext for testing."""
+    def mock_decrypt(filepath):
+        return pathlib.Path(filepath).read_bytes()
+
+    def mock_encrypt(filepath, data):
+        pathlib.Path(filepath).write_bytes(data)
+
+    with mock.patch("kpk.gpg_decrypt_file", mock_decrypt), \
+         mock.patch("kpk.gpg_encrypt_file", mock_encrypt):
+        yield
+
+
 def test_python_version():
     """Set our minimum python version."""
     assert sys.version_info >= (3, 6, 0)
@@ -50,12 +64,12 @@ def test_python_version():
 def test_check_path_default():
     path = str(kpk.check_path())
     home = os.environ.get("HOME")
-    assert path == home + "/.kpk/secrets.json"
+    assert path == home + "/.kpk/secrets.json.gpg"
 
 
 @mock.patch.dict(os.environ, {"KPK_DBDIR": "/tmp"})
 def test_check_path_valid_environment_variable():
-    assert kpk.check_path() == pathlib.PosixPath('/tmp/secrets.json')
+    assert kpk.check_path() == pathlib.PosixPath('/tmp/secrets.json.gpg')
 
 
 @mock.patch.dict(os.environ, {"KPK_DBDIR": "/tmp/39a12f8d-506b-41f3-9184-4f956d860b52"})
@@ -70,7 +84,7 @@ def test_check_path_invalid_environment_variable():
 
 def test_check_path_directory_argument():
     """check_path with explicit directory argument."""
-    assert kpk.check_path("/tmp") == pathlib.PosixPath('/tmp/secrets.json')
+    assert kpk.check_path("/tmp") == pathlib.PosixPath('/tmp/secrets.json.gpg')
 
 
 def test_check_path_invalid_directory_argument():
@@ -262,7 +276,7 @@ def test_password_to_key_empty():
 def test_db_setup_loads_existing_db():
     """db_setup loads an existing JSON database."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        dbpath = pathlib.Path(tmpdir) / "secrets.json"
+        dbpath = pathlib.Path(tmpdir) / "secrets.json.gpg"
         data = {"__version__": "3", "testkey": "testval"}
         json.dump(data, dbpath.open(mode="w"))
 
@@ -275,7 +289,7 @@ def test_db_setup_loads_existing_db():
 def test_db_setup_rejects_old_version():
     """db_setup rejects a v2 database."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        dbpath = pathlib.Path(tmpdir) / "secrets.json"
+        dbpath = pathlib.Path(tmpdir) / "secrets.json.gpg"
         json.dump({"__version__": "2"}, dbpath.open(mode="w"))
 
         with pytest.raises(SystemExit) as pytest_wrapped_e:
@@ -286,7 +300,7 @@ def test_db_setup_rejects_old_version():
 def test_db_setup_creates_new_db():
     """db_setup creates a new db file and exits when none exists."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        dbpath = pathlib.Path(tmpdir) / "secrets.json"
+        dbpath = pathlib.Path(tmpdir) / "secrets.json.gpg"
 
         with pytest.raises(SystemExit):
             kpk.db_setup(dbpath)
@@ -299,7 +313,7 @@ def test_db_setup_creates_new_db():
 def test_db_setup_invalid_json():
     """db_setup reinitializes when existing file has invalid JSON."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        dbpath = pathlib.Path(tmpdir) / "secrets.json"
+        dbpath = pathlib.Path(tmpdir) / "secrets.json.gpg"
         dbpath.write_text("not valid json{{{")
 
         with pytest.raises(SystemExit):
@@ -312,7 +326,7 @@ def test_db_setup_invalid_json():
 def test_db_setup_rejects_unsupported_version():
     """db_setup rejects a DB with an unsupported version."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        dbpath = pathlib.Path(tmpdir) / "secrets.json"
+        dbpath = pathlib.Path(tmpdir) / "secrets.json.gpg"
         json.dump({"__version__": "99"}, dbpath.open(mode="w"))
 
         with pytest.raises(SystemExit) as pytest_wrapped_e:
@@ -323,7 +337,7 @@ def test_db_setup_rejects_unsupported_version():
 def test_db_setup_migrate_v2_to_v3():
     """db_setup with migrate=True upgrades a v2 DB to v3."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        dbpath = pathlib.Path(tmpdir) / "secrets.json"
+        dbpath = pathlib.Path(tmpdir) / "secrets.json.gpg"
         json.dump({"__version__": "2", "mykey": "ciphertext"}, dbpath.open(mode="w"))
 
         db = kpk.db_setup(dbpath, migrate=True)
@@ -334,7 +348,7 @@ def test_db_setup_migrate_v2_to_v3():
 def test_db_setup_migrate_corrupted_version():
     """db_setup with migrate=True repairs a corrupted __version__."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        dbpath = pathlib.Path(tmpdir) / "secrets.json"
+        dbpath = pathlib.Path(tmpdir) / "secrets.json.gpg"
         corrupted = {"__version__": {"value": "encrypted_junk", "updated": "2026-01-01T00:00:00Z"}}
         json.dump(corrupted, dbpath.open(mode="w"))
 
@@ -345,7 +359,7 @@ def test_db_setup_migrate_corrupted_version():
 def test_db_setup_migrate_false_rejects_v2():
     """db_setup without migrate rejects a v2 DB."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        dbpath = pathlib.Path(tmpdir) / "secrets.json"
+        dbpath = pathlib.Path(tmpdir) / "secrets.json.gpg"
         json.dump({"__version__": "2"}, dbpath.open(mode="w"))
 
         with pytest.raises(SystemExit) as pytest_wrapped_e:
@@ -436,7 +450,7 @@ def kpk_env(tmp_path):
         "mykey": ciphertext,
         "tskey": {"value": ts_ciphertext, "updated": "2026-01-01T00:00:00Z"},
     }
-    dbpath = tmp_path / "secrets.json"
+    dbpath = tmp_path / "secrets.json.gpg"
     json.dump(db, dbpath.open(mode="w"), sort_keys=True, indent=4)
 
     return {
@@ -680,7 +694,7 @@ def test_cli_import_migrates_v2_db(tmp_path):
 
     ciphertext = ciphersuite.encrypt(b"oldval").decode("utf-8")
     db = {"__version__": "2", "oldkey": ciphertext}
-    dbpath = tmp_path / "secrets.json"
+    dbpath = tmp_path / "secrets.json.gpg"
     json.dump(db, dbpath.open(mode="w"), sort_keys=True, indent=4)
 
     import_file = tmp_path / "import.json"
