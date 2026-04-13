@@ -79,8 +79,11 @@ def db_write(dbpath, db):
         json.dump(db, f, sort_keys=True, indent=4)
 
 
-def db_setup(dbpath):
-    """Setup db -- load existing or create new."""
+def db_setup(dbpath, migrate=False):
+    """Setup db -- load existing or create new.
+
+    If migrate=True, upgrade older DB versions to the current version.
+    """
 
     try:
         db = json.load(dbpath.open(mode="r"))
@@ -100,8 +103,12 @@ def db_setup(dbpath):
 
     db_ver = db.get("__version__")
     if db_ver != DB_VERSION:
-        logger.error(f"Unsupported DB version: {db_ver}. Expected {DB_VERSION}.")
-        sys.exit(1)
+        if migrate and db_ver in ("2",):
+            logger.info(f"Migrating DB from version {db_ver} to {DB_VERSION}.")
+            db["__version__"] = DB_VERSION
+        else:
+            logger.error(f"Unsupported DB version: {db_ver}. Expected {DB_VERSION}.")
+            sys.exit(1)
 
     db["__path__"] = str(dbpath)
 
@@ -354,7 +361,7 @@ def export(file):
     cryptokey = password_to_key(password)
     ciphersuite = Fernet(cryptokey)
 
-    exported = {}
+    exported = {"__version__": db.get("__version__", DB_VERSION)}
     for k, v in db.items():
         if k.startswith("__"):
             continue
@@ -415,7 +422,7 @@ def import_cmd(file):
         sys.exit(1)
 
     db_path = check_path()
-    db = db_setup(db_path)
+    db = db_setup(db_path, migrate=True)
 
     internal_keys = {k for k in db if k.startswith("__")}
     existing_keys = {k for k in db if not k.startswith("__")}

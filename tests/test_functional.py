@@ -320,6 +320,28 @@ def test_db_setup_rejects_unsupported_version():
         assert pytest_wrapped_e.value.code == 1
 
 
+def test_db_setup_migrate_v2_to_v3():
+    """db_setup with migrate=True upgrades a v2 DB to v3."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dbpath = pathlib.Path(tmpdir) / "secrets.json"
+        json.dump({"__version__": "2", "mykey": "ciphertext"}, dbpath.open(mode="w"))
+
+        db = kpk.db_setup(dbpath, migrate=True)
+        assert db["__version__"] == "3"
+        assert db["mykey"] == "ciphertext"
+
+
+def test_db_setup_migrate_false_rejects_v2():
+    """db_setup without migrate rejects a v2 DB."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dbpath = pathlib.Path(tmpdir) / "secrets.json"
+        json.dump({"__version__": "2"}, dbpath.open(mode="w"))
+
+        with pytest.raises(SystemExit) as pytest_wrapped_e:
+            kpk.db_setup(dbpath)
+        assert pytest_wrapped_e.value.code == 1
+
+
 # --- Import class tests ---
 
 
@@ -516,8 +538,8 @@ def test_cli_export_to_file(kpk_env, tmp_path):
     assert data["mykey"] == "supersecret"
 
 
-def test_cli_export_skips_dunder_keys(kpk_env, tmp_path):
-    """export skips keys starting with __."""
+def test_cli_export_includes_version(kpk_env, tmp_path):
+    """export includes __version__ but not __path__."""
     outfile = tmp_path / "export.json"
     runner = CliRunner()
     with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]), \
@@ -525,7 +547,7 @@ def test_cli_export_skips_dunder_keys(kpk_env, tmp_path):
         result = runner.invoke(kpk.main, ["export", "--file", str(outfile)], input=EXPORT_CONFIRMATION)
     assert result.exit_code == 0
     data = json.loads(outfile.read_text())
-    assert "__version__" not in data
+    assert data["__version__"] == "3"
     assert "__path__" not in data
 
 
@@ -637,6 +659,33 @@ def test_cli_import_overwrite_aborted(kpk_env, tmp_path):
          mock.patch("kpk.obtain_password", return_value=kpk_env["password"]):
         result = runner.invoke(kpk.main, ["import", "-f", str(import_file)], input="n")
     assert result.exit_code == 1
+
+
+def test_cli_import_migrates_v2_db(tmp_path):
+    """import into a v2 DB migrates it to v3."""
+    password = b"72ebc541-ac9a-4d97-a6fe-d2b9ccd6190c"
+    key = kpk.password_to_key(password)
+    ciphersuite = Fernet(key)
+
+    ciphertext = ciphersuite.encrypt(b"oldval").decode("utf-8")
+    db = {"__version__": "2", "oldkey": ciphertext}
+    dbpath = tmp_path / "secrets.json"
+    json.dump(db, dbpath.open(mode="w"), sort_keys=True, indent=4)
+
+    import_file = tmp_path / "import.json"
+    import_file.write_text(json.dumps({"newkey": "newvalue"}))
+
+    runner = CliRunner()
+    with mock.patch("kpk.check_path", return_value=dbpath), \
+         mock.patch("kpk.obtain_password", return_value=password):
+        result = runner.invoke(kpk.main, ["import", "-f", str(import_file)])
+    assert result.exit_code == 0
+    assert "Migrating" in result.output
+
+    db = json.load(dbpath.open())
+    assert db["__version__"] == "3"
+    assert "newkey" in db
+    assert "oldkey" in db
 
 
 # --- timestamp tests ---
