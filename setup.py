@@ -8,7 +8,7 @@ with open("requirements.txt") as r:
 
 setuptools.setup(
     name="kpk",
-    version="2.3.1",
+    version="2.3.2",
     author="Kris Amundson",
     author_email="krisa@subtend.net",
     description="Simple on-disk key/value store secured by GPG.",
