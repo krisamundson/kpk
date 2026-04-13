@@ -296,7 +296,7 @@ def ls():
             continue
         ts = entry_get_updated(v)
         if ts:
-            keys += f"{k}  ({ts})\n"
+            keys += f"{k:<65}{ts}\n"
         else:
             keys += f"{k}\n"
 
