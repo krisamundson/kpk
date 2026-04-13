@@ -1,4 +1,6 @@
+.claude/
 .idea/
+CLAUDE.md
 kpk.egg-info/
 __pycache__
 venv/
