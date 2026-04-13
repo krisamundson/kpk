@@ -4,7 +4,7 @@
 __author__ = "Kris Amundson"
 __copyright__ = "Copyright (C) 2024 Kris Amundson"
 __license__ = "GPL-3.0-or-later"
-__version__ = "2.3.0"
+__version__ = "2.3.1"
 
 import base64
 import clipboard
