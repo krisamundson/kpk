@@ -20,6 +20,7 @@ import json
 import os
 import pathlib
 import pytest
+import re
 import sys
 import tempfile
 import kpk
@@ -262,13 +263,24 @@ def test_db_setup_loads_existing_db():
     """db_setup loads an existing JSON database."""
     with tempfile.TemporaryDirectory() as tmpdir:
         dbpath = pathlib.Path(tmpdir) / "secrets.json"
-        data = {"__version__": "2", "testkey": "testval"}
+        data = {"__version__": "3", "testkey": "testval"}
         json.dump(data, dbpath.open(mode="w"))
 
         db = kpk.db_setup(dbpath)
-        assert db["__version__"] == "2"
+        assert db["__version__"] == "3"
         assert db["testkey"] == "testval"
         assert db["__path__"] == str(dbpath)
+
+
+def test_db_setup_rejects_old_version():
+    """db_setup rejects a v2 database."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dbpath = pathlib.Path(tmpdir) / "secrets.json"
+        json.dump({"__version__": "2"}, dbpath.open(mode="w"))
+
+        with pytest.raises(SystemExit) as pytest_wrapped_e:
+            kpk.db_setup(dbpath)
+        assert pytest_wrapped_e.value.code == 1
 
 
 def test_db_setup_creates_new_db():
@@ -281,7 +293,7 @@ def test_db_setup_creates_new_db():
 
         assert dbpath.exists()
         data = json.load(dbpath.open())
-        assert data["__version__"] == "2"
+        assert data["__version__"] == "3"
 
 
 def test_db_setup_invalid_json():
@@ -294,7 +306,18 @@ def test_db_setup_invalid_json():
             kpk.db_setup(dbpath)
 
         data = json.load(dbpath.open())
-        assert data["__version__"] == "2"
+        assert data["__version__"] == "3"
+
+
+def test_db_setup_rejects_unsupported_version():
+    """db_setup rejects a DB with an unsupported version."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dbpath = pathlib.Path(tmpdir) / "secrets.json"
+        json.dump({"__version__": "99"}, dbpath.open(mode="w"))
+
+        with pytest.raises(SystemExit) as pytest_wrapped_e:
+            kpk.db_setup(dbpath)
+        assert pytest_wrapped_e.value.code == 1
 
 
 # --- Import class tests ---
@@ -318,19 +341,68 @@ def test_import_missing_file():
         kpk.Import(path="/nonexistent/file.yaml")
 
 
+# --- entry helper tests ---
+
+
+def test_now_iso_format():
+    """now_iso returns a valid ISO 8601 UTC timestamp."""
+    ts = kpk.now_iso()
+    assert re.match(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", ts)
+
+
+def test_entry_get_value_string():
+    """entry_get_value returns the string itself for old-format entries."""
+    assert kpk.entry_get_value("ciphertext") == "ciphertext"
+
+
+def test_entry_get_value_dict():
+    """entry_get_value extracts the value field from new-format entries."""
+    entry = {"value": "ciphertext", "updated": "2026-01-01T00:00:00Z"}
+    assert kpk.entry_get_value(entry) == "ciphertext"
+
+
+def test_entry_get_updated_string():
+    """entry_get_updated returns None for old-format entries."""
+    assert kpk.entry_get_updated("ciphertext") is None
+
+
+def test_entry_get_updated_dict():
+    """entry_get_updated returns the timestamp for new-format entries."""
+    entry = {"value": "ciphertext", "updated": "2026-01-01T00:00:00Z"}
+    assert kpk.entry_get_updated(entry) == "2026-01-01T00:00:00Z"
+
+
+def test_entry_make():
+    """entry_make creates a dict with value and updated keys."""
+    entry = kpk.entry_make("ciphertext")
+    assert entry["value"] == "ciphertext"
+    assert re.match(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", entry["updated"])
+
+
 # --- CLI tests ---
 
 
 @pytest.fixture
 def kpk_env(tmp_path):
-    """Temporary kpk environment with a pre-populated encrypted DB."""
+    """Temporary kpk environment with a pre-populated encrypted DB.
+
+    Contains both old-format (bare string) and new-format (dict with timestamp) entries.
+    """
     password = b"72ebc541-ac9a-4d97-a6fe-d2b9ccd6190c"
     key = kpk.password_to_key(password)
     ciphersuite = Fernet(key)
 
     clearvalue = "supersecret"
     ciphertext = ciphersuite.encrypt(clearvalue.encode()).decode("utf-8")
-    db = {"__version__": "2", "mykey": ciphertext}
+
+    ts_clearvalue = "timestamped_secret"
+    ts_ciphertext = ciphersuite.encrypt(ts_clearvalue.encode()).decode("utf-8")
+
+    db = {
+        "__version__": "3",
+        "mykey": ciphertext,
+        "tskey": {"value": ts_ciphertext, "updated": "2026-01-01T00:00:00Z"},
+    }
     dbpath = tmp_path / "secrets.json"
     json.dump(db, dbpath.open(mode="w"), sort_keys=True, indent=4)
 
@@ -565,3 +637,123 @@ def test_cli_import_overwrite_aborted(kpk_env, tmp_path):
          mock.patch("kpk.obtain_password", return_value=kpk_env["password"]):
         result = runner.invoke(kpk.main, ["import", "-f", str(import_file)], input="n")
     assert result.exit_code == 1
+
+
+# --- timestamp tests ---
+
+
+def test_cli_get_with_timestamp(kpk_env):
+    """get works on a new-format entry with timestamp."""
+    runner = CliRunner()
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]), \
+         mock.patch("kpk.obtain_password", return_value=kpk_env["password"]):
+        result = runner.invoke(kpk.main, ["get", "--out", "tskey"])
+    assert result.exit_code == 0
+    assert "timestamped_secret" in result.output
+
+
+def test_cli_set_creates_timestamp(kpk_env):
+    """set stores an entry with a timestamp."""
+    runner = CliRunner()
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]), \
+         mock.patch("kpk.obtain_password", return_value=kpk_env["password"]):
+        result = runner.invoke(kpk.main, ["set", "newkey", "newvalue"])
+    assert result.exit_code == 0
+
+    db = json.load(kpk_env["dbpath"].open())
+    entry = db["newkey"]
+    assert isinstance(entry, dict)
+    assert "value" in entry
+    assert re.match(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", entry["updated"])
+
+
+def test_cli_ls_shows_timestamps(kpk_env):
+    """ls shows timestamps for entries that have them."""
+    runner = CliRunner()
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]):
+        result = runner.invoke(kpk.main, ["ls"])
+    assert result.exit_code == 0
+    assert "tskey" in result.output
+    assert "2026-01-01T00:00:00Z" in result.output
+    assert "mykey" in result.output
+
+
+def test_cli_export_includes_timestamps(kpk_env, tmp_path):
+    """export includes timestamps for new-format entries."""
+    outfile = tmp_path / "export.json"
+    runner = CliRunner()
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]), \
+         mock.patch("kpk.obtain_password", return_value=kpk_env["password"]):
+        result = runner.invoke(kpk.main, ["export", "--file", str(outfile)], input=EXPORT_CONFIRMATION)
+    assert result.exit_code == 0
+    data = json.loads(outfile.read_text())
+    # old-format entry exports as bare string
+    assert data["mykey"] == "supersecret"
+    # new-format entry exports with timestamp
+    assert data["tskey"]["value"] == "timestamped_secret"
+    assert data["tskey"]["updated"] == "2026-01-01T00:00:00Z"
+
+
+def test_cli_import_timestamped_format(kpk_env, tmp_path):
+    """import accepts the timestamped entry format."""
+    import_data = {"newkey": {"value": "imported_val", "updated": "2026-06-01T00:00:00Z"}}
+    import_file = tmp_path / "import.json"
+    import_file.write_text(json.dumps(import_data))
+
+    runner = CliRunner()
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]), \
+         mock.patch("kpk.obtain_password", return_value=kpk_env["password"]):
+        result = runner.invoke(kpk.main, ["import", "-f", str(import_file)])
+    assert result.exit_code == 0
+
+    # verify the timestamp was preserved
+    db = json.load(kpk_env["dbpath"].open())
+    assert db["newkey"]["updated"] == "2026-06-01T00:00:00Z"
+
+    # verify the value decrypts
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]), \
+         mock.patch("kpk.obtain_password", return_value=kpk_env["password"]):
+        result = runner.invoke(kpk.main, ["get", "--out", "newkey"])
+    assert result.exit_code == 0
+    assert "imported_val" in result.output
+
+
+def test_cli_import_newer_wins(kpk_env, tmp_path):
+    """import auto-resolves: newer import entry overwrites older existing."""
+    import_data = {"tskey": {"value": "newer_val", "updated": "2027-01-01T00:00:00Z"}}
+    import_file = tmp_path / "import.json"
+    import_file.write_text(json.dumps(import_data))
+
+    runner = CliRunner()
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]), \
+         mock.patch("kpk.obtain_password", return_value=kpk_env["password"]):
+        result = runner.invoke(kpk.main, ["import", "-f", str(import_file)])
+    assert result.exit_code == 0
+    assert "updating from import" in result.output
+
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]), \
+         mock.patch("kpk.obtain_password", return_value=kpk_env["password"]):
+        result = runner.invoke(kpk.main, ["get", "--out", "tskey"])
+    assert result.exit_code == 0
+    assert "newer_val" in result.output
+
+
+def test_cli_import_existing_wins(kpk_env, tmp_path):
+    """import auto-resolves: older import entry is skipped."""
+    import_data = {"tskey": {"value": "older_val", "updated": "2025-01-01T00:00:00Z"}}
+    import_file = tmp_path / "import.json"
+    import_file.write_text(json.dumps(import_data))
+
+    runner = CliRunner()
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]), \
+         mock.patch("kpk.obtain_password", return_value=kpk_env["password"]):
+        result = runner.invoke(kpk.main, ["import", "-f", str(import_file)])
+    assert result.exit_code == 0
+    assert "keeping existing" in result.output
+
+    # original value is preserved
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]), \
+         mock.patch("kpk.obtain_password", return_value=kpk_env["password"]):
+        result = runner.invoke(kpk.main, ["get", "--out", "tskey"])
+    assert result.exit_code == 0
+    assert "timestamped_secret" in result.output

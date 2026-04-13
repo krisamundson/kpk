@@ -18,6 +18,7 @@ import pathlib
 import yaml
 import subprocess
 import sys
+from datetime import datetime, timezone
 from loguru import logger
 from cryptography.fernet import Fernet
 from cryptography.hazmat.backends import default_backend
@@ -44,6 +45,33 @@ class Import:
         self.data = list(yaml.safe_load_all(self.src.read_text()))
 
 
+DB_VERSION = "3"
+
+
+def now_iso():
+    """Return current UTC time as ISO 8601 string."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def entry_get_value(entry):
+    """Extract ciphertext from a DB entry (string or dict)."""
+    if isinstance(entry, dict):
+        return entry["value"]
+    return entry
+
+
+def entry_get_updated(entry):
+    """Extract updated timestamp from a DB entry, or None."""
+    if isinstance(entry, dict):
+        return entry.get("updated")
+    return None
+
+
+def entry_make(ciphertext):
+    """Create a DB entry with the current timestamp."""
+    return {"value": ciphertext, "updated": now_iso()}
+
+
 def db_write(dbpath, db):
     """Write db to disk with an exclusive file lock."""
     with open(dbpath, "w") as f:
@@ -59,7 +87,7 @@ def db_setup(dbpath):
     except (FileNotFoundError, json.decoder.JSONDecodeError):
         # DB does not exist or is not JSON, we create a new one.
         try:
-            db = {"__version__": "2"}
+            db = {"__version__": DB_VERSION}
             dbpath.parent.mkdir(parents=False, exist_ok=True)
             db_write(dbpath, db)
         except FileNotFoundError as _e:
@@ -69,6 +97,11 @@ def db_setup(dbpath):
         logger.info(f"Initialized new db: {dbpath}")
         logger.info("Create a password.gpg in this directory to use as encryption key.")
         sys.exit()
+
+    db_ver = db.get("__version__")
+    if db_ver != DB_VERSION:
+        logger.error(f"Unsupported DB version: {db_ver}. Expected {DB_VERSION}.")
+        sys.exit(1)
 
     db["__path__"] = str(dbpath)
 
@@ -186,7 +219,7 @@ def delete(key):
     db = db_setup(db_path)
 
     try:
-        logger.debug(f"Cypher Value: {db[key]}")
+        logger.debug(f"Cypher Value: {entry_get_value(db[key])}")
         del db[key]
     except KeyError:
         logger.warning("Value not in db.")
@@ -217,7 +250,7 @@ def get(key, out):
     logger.debug(f"Cryptokey: {cryptokey}")
 
     try:
-        cyphervalue = db[key].encode("utf-8")
+        cyphervalue = entry_get_value(db[key]).encode("utf-8")
         logger.debug(f"Cypher Value: {cyphervalue}")
     except KeyError:
         logger.warning(f"Key '{key}' not found.")
@@ -247,8 +280,14 @@ def ls():
     logger.debug(f"db_path: {db_path}\n")
 
     keys = "\n═════════════════════ KEYS ══════════════════════\n"
-    for k in db.keys():
-        keys += f"{k}\n"
+    for k, v in db.items():
+        if k.startswith("__"):
+            continue
+        ts = entry_get_updated(v)
+        if ts:
+            keys += f"{k}  ({ts})\n"
+        else:
+            keys += f"{k}\n"
 
     logger.info(keys)
 
@@ -282,7 +321,7 @@ def set(key, value, prompt):
     ciphersuite = Fernet(cryptokey)
 
     cipherbytes = ciphersuite.encrypt(value.encode())
-    db[key] = cipherbytes.decode("utf-8")
+    db[key] = entry_make(cipherbytes.decode("utf-8"))
 
     try:
         db_write(db_path, db)
@@ -320,9 +359,15 @@ def export(file):
         if k.startswith("__"):
             continue
         try:
-            exported[k] = ciphersuite.decrypt(v.encode("utf-8")).decode("utf-8")
+            cleartext = ciphersuite.decrypt(entry_get_value(v).encode("utf-8")).decode("utf-8")
         except InvalidToken:
             logger.error(f"Decryption failed for key '{k}', skipping.")
+            continue
+        ts = entry_get_updated(v)
+        if ts:
+            exported[k] = {"value": cleartext, "updated": ts}
+        else:
+            exported[k] = cleartext
 
     output = json.dumps(exported, sort_keys=True, indent=4)
 
@@ -354,7 +399,14 @@ def import_cmd(file):
         sys.exit(1)
 
     for k, v in data.items():
-        if not isinstance(k, str) or not isinstance(v, str):
+        if not isinstance(k, str):
+            logger.error(f"Key '{k}' is not a string.")
+            sys.exit(1)
+        if isinstance(v, dict):
+            if "value" not in v or not isinstance(v["value"], str):
+                logger.error(f"Key '{k}': timestamped entry must have a string 'value' field.")
+                sys.exit(1)
+        elif not isinstance(v, str):
             logger.error(f"Key '{k}' or its value is not a string. All keys and values must be strings.")
             sys.exit(1)
 
@@ -369,22 +421,55 @@ def import_cmd(file):
     existing_keys = {k for k in db if not k.startswith("__")}
     overwritten = sorted(existing_keys & {k for k in data})
 
+    skip_keys = []
     if overwritten:
-        click.echo(f"\nThe following {len(overwritten)} existing key(s) will be overwritten:\n")
+        auto_kept = []
+        auto_updated = []
+        needs_prompt = []
+
         for k in overwritten:
-            click.echo(f"  - {k}")
-        click.echo()
-        if not click.confirm("Proceed?"):
-            logger.error("Import aborted.")
-            sys.exit(1)
+            import_entry = data[k]
+            import_ts = import_entry.get("updated") if isinstance(import_entry, dict) else None
+            db_ts = entry_get_updated(db[k])
+
+            if import_ts and db_ts:
+                if import_ts > db_ts:
+                    auto_updated.append(k)
+                else:
+                    auto_kept.append(k)
+                    skip_keys.append(k)
+            else:
+                needs_prompt.append(k)
+
+        for k in auto_updated:
+            logger.info(f"  {k}: updating from import (newer)")
+        for k in auto_kept:
+            logger.info(f"  {k}: keeping existing (newer)")
+
+        if needs_prompt:
+            click.echo(f"\nThe following {len(needs_prompt)} existing key(s) will be overwritten:\n")
+            for k in needs_prompt:
+                click.echo(f"  - {k}")
+            click.echo()
+            if not click.confirm("Proceed?"):
+                logger.error("Import aborted.")
+                sys.exit(1)
 
     password = obtain_password()
     cryptokey = password_to_key(password)
     ciphersuite = Fernet(cryptokey)
 
     for k, v in data.items():
-        cipherbytes = ciphersuite.encrypt(v.encode())
-        db[k] = cipherbytes.decode("utf-8")
+        if k in skip_keys:
+            continue
+        import_cleartext = v["value"] if isinstance(v, dict) else v
+        import_ts = v.get("updated") if isinstance(v, dict) else None
+        cipherbytes = ciphersuite.encrypt(import_cleartext.encode())
+        ciphertext = cipherbytes.decode("utf-8")
+        if import_ts:
+            db[k] = {"value": ciphertext, "updated": import_ts}
+        else:
+            db[k] = entry_make(ciphertext)
 
     try:
         db_write(db_path, db)
