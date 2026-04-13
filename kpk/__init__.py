@@ -103,8 +103,8 @@ def db_setup(dbpath, migrate=False):
 
     db_ver = db.get("__version__")
     if db_ver != DB_VERSION:
-        if migrate and db_ver in ("2",):
-            logger.info(f"Migrating DB from version {db_ver} to {DB_VERSION}.")
+        if migrate and (db_ver in ("2",) or not isinstance(db_ver, str)):
+            logger.info(f"Migrating DB to version {DB_VERSION}.")
             db["__version__"] = DB_VERSION
         else:
             logger.error(f"Unsupported DB version: {db_ver}. Expected {DB_VERSION}.")

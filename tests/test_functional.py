@@ -331,6 +331,17 @@ def test_db_setup_migrate_v2_to_v3():
         assert db["mykey"] == "ciphertext"
 
 
+def test_db_setup_migrate_corrupted_version():
+    """db_setup with migrate=True repairs a corrupted __version__."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dbpath = pathlib.Path(tmpdir) / "secrets.json"
+        corrupted = {"__version__": {"value": "encrypted_junk", "updated": "2026-01-01T00:00:00Z"}}
+        json.dump(corrupted, dbpath.open(mode="w"))
+
+        db = kpk.db_setup(dbpath, migrate=True)
+        assert db["__version__"] == "3"
+
+
 def test_db_setup_migrate_false_rejects_v2():
     """db_setup without migrate rejects a v2 DB."""
     with tempfile.TemporaryDirectory() as tmpdir:
