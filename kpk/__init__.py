@@ -293,7 +293,111 @@ def set(key, value, prompt):
     logger.info("OK")
 
 
+@click.command()
+@click.option("--file", "-f", type=click.Path(), default=None, help="Export to a file instead of stdout.")
+def export(file):
+    """Export all keys and decrypted values as JSON."""
+    confirmation = "EXPORT ALL MY SECRETS IN THE CLEAR"
+    msg = "This exports all your secrets in the CLEAR"
+    border = "═" * (len(msg) + 2)
+    click.echo(f"\n╔{border}╗")
+    click.echo(f"║ {msg} ║")
+    click.echo(f"╚{border}╝\n")
+    response = input(f'Type "{confirmation}" to proceed: ')
+    if response != confirmation:
+        logger.error("Export aborted.")
+        sys.exit(1)
+
+    db_path = check_path()
+    db = db_setup(db_path)
+
+    password = obtain_password()
+    cryptokey = password_to_key(password)
+    ciphersuite = Fernet(cryptokey)
+
+    exported = {}
+    for k, v in db.items():
+        if k.startswith("__"):
+            continue
+        try:
+            exported[k] = ciphersuite.decrypt(v.encode("utf-8")).decode("utf-8")
+        except InvalidToken:
+            logger.error(f"Decryption failed for key '{k}', skipping.")
+
+    output = json.dumps(exported, sort_keys=True, indent=4)
+
+    if file:
+        pathlib.Path(file).write_text(output + "\n")
+        logger.info(f"Exported to {file}")
+    else:
+        print(output)
+
+
+@click.command(name="import")
+@click.option("--file", "-f", type=click.Path(exists=True), default=None, help="Import from a file instead of stdin.")
+def import_cmd(file):
+    """Import keys and cleartext values from JSON, encrypting them into the database."""
+    if file:
+        raw = pathlib.Path(file).read_text()
+    else:
+        click.echo("Reading JSON from stdin (Ctrl-D to end):")
+        raw = sys.stdin.read()
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON: {e}")
+        sys.exit(1)
+
+    if not isinstance(data, dict):
+        logger.error("Expected a JSON object with string keys and string values.")
+        sys.exit(1)
+
+    for k, v in data.items():
+        if not isinstance(k, str) or not isinstance(v, str):
+            logger.error(f"Key '{k}' or its value is not a string. All keys and values must be strings.")
+            sys.exit(1)
+
+    if not data:
+        logger.error("Nothing to import.")
+        sys.exit(1)
+
+    db_path = check_path()
+    db = db_setup(db_path)
+
+    internal_keys = {k for k in db if k.startswith("__")}
+    existing_keys = {k for k in db if not k.startswith("__")}
+    overwritten = sorted(existing_keys & {k for k in data})
+
+    if overwritten:
+        click.echo(f"\nThe following {len(overwritten)} existing key(s) will be overwritten:\n")
+        for k in overwritten:
+            click.echo(f"  - {k}")
+        click.echo()
+        if not click.confirm("Proceed?"):
+            logger.error("Import aborted.")
+            sys.exit(1)
+
+    password = obtain_password()
+    cryptokey = password_to_key(password)
+    ciphersuite = Fernet(cryptokey)
+
+    for k, v in data.items():
+        cipherbytes = ciphersuite.encrypt(v.encode())
+        db[k] = cipherbytes.decode("utf-8")
+
+    try:
+        db_write(db_path, db)
+    except FileNotFoundError:
+        logger.error("DB open failed, file not found.")
+        sys.exit(1)
+
+    logger.info(f"Imported {len(data)} key(s). OK")
+
+
 main.add_command(delete)
+main.add_command(export)
+main.add_command(import_cmd)
 main.add_command(ls)
 main.add_command(get)
 main.add_command(set)

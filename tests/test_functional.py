@@ -414,3 +414,154 @@ def test_cli_delete_missing_key(kpk_env):
     with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]):
         result = runner.invoke(kpk.main, ["delete", "noexist"])
     assert result.exit_code == 2
+
+
+# --- export tests ---
+
+
+EXPORT_CONFIRMATION = "EXPORT ALL MY SECRETS IN THE CLEAR"
+
+
+def test_cli_export_to_stdout(kpk_env):
+    """export prints decrypted JSON to stdout."""
+    runner = CliRunner()
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]), \
+         mock.patch("kpk.obtain_password", return_value=kpk_env["password"]):
+        result = runner.invoke(kpk.main, ["export"], input=EXPORT_CONFIRMATION)
+    assert result.exit_code == 0
+    assert '"mykey": "supersecret"' in result.output
+
+
+def test_cli_export_to_file(kpk_env, tmp_path):
+    """export --file writes decrypted JSON to a file."""
+    outfile = tmp_path / "export.json"
+    runner = CliRunner()
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]), \
+         mock.patch("kpk.obtain_password", return_value=kpk_env["password"]):
+        result = runner.invoke(kpk.main, ["export", "--file", str(outfile)], input=EXPORT_CONFIRMATION)
+    assert result.exit_code == 0
+    data = json.loads(outfile.read_text())
+    assert data["mykey"] == "supersecret"
+
+
+def test_cli_export_skips_dunder_keys(kpk_env, tmp_path):
+    """export skips keys starting with __."""
+    outfile = tmp_path / "export.json"
+    runner = CliRunner()
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]), \
+         mock.patch("kpk.obtain_password", return_value=kpk_env["password"]):
+        result = runner.invoke(kpk.main, ["export", "--file", str(outfile)], input=EXPORT_CONFIRMATION)
+    assert result.exit_code == 0
+    data = json.loads(outfile.read_text())
+    assert "__version__" not in data
+    assert "__path__" not in data
+
+
+def test_cli_export_aborted(kpk_env):
+    """export aborts when confirmation doesn't match."""
+    runner = CliRunner()
+    result = runner.invoke(kpk.main, ["export"], input="no")
+    assert result.exit_code == 1
+
+
+# --- import tests ---
+
+
+def test_cli_import_from_file(kpk_env, tmp_path):
+    """import from file adds new keys."""
+    import_data = {"newkey": "newvalue", "another": "secret"}
+    import_file = tmp_path / "import.json"
+    import_file.write_text(json.dumps(import_data))
+
+    runner = CliRunner()
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]), \
+         mock.patch("kpk.obtain_password", return_value=kpk_env["password"]):
+        result = runner.invoke(kpk.main, ["import", "-f", str(import_file)])
+    assert result.exit_code == 0
+    assert "Imported 2 key(s)" in result.output
+
+    # verify the values were encrypted and stored
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]), \
+         mock.patch("kpk.obtain_password", return_value=kpk_env["password"]):
+        result = runner.invoke(kpk.main, ["get", "--out", "newkey"])
+    assert result.exit_code == 0
+    assert "newvalue" in result.output
+
+
+def test_cli_import_from_stdin(kpk_env):
+    """import from stdin adds new keys."""
+    import_data = json.dumps({"stdinkey": "stdinval"})
+
+    runner = CliRunner()
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]), \
+         mock.patch("kpk.obtain_password", return_value=kpk_env["password"]):
+        result = runner.invoke(kpk.main, ["import"], input=import_data)
+    assert result.exit_code == 0
+    assert "Imported 1 key(s)" in result.output
+
+
+def test_cli_import_invalid_json(kpk_env):
+    """import rejects invalid JSON."""
+    runner = CliRunner()
+    result = runner.invoke(kpk.main, ["import"], input="not json{{{")
+    assert result.exit_code == 1
+    assert "Invalid JSON" in result.output
+
+
+def test_cli_import_not_a_dict(kpk_env):
+    """import rejects JSON that is not an object."""
+    runner = CliRunner()
+    result = runner.invoke(kpk.main, ["import"], input='["a", "b"]')
+    assert result.exit_code == 1
+    assert "Expected a JSON object" in result.output
+
+
+def test_cli_import_non_string_value(kpk_env):
+    """import rejects values that are not strings."""
+    runner = CliRunner()
+    result = runner.invoke(kpk.main, ["import"], input='{"key": 123}')
+    assert result.exit_code == 1
+    assert "not a string" in result.output
+
+
+def test_cli_import_empty_object(kpk_env):
+    """import rejects empty JSON object."""
+    runner = CliRunner()
+    result = runner.invoke(kpk.main, ["import"], input='{}')
+    assert result.exit_code == 1
+    assert "Nothing to import" in result.output
+
+
+def test_cli_import_overwrite_confirmed(kpk_env, tmp_path):
+    """import with overlapping keys proceeds when user confirms."""
+    import_data = {"mykey": "updated_secret"}
+    import_file = tmp_path / "import.json"
+    import_file.write_text(json.dumps(import_data))
+
+    runner = CliRunner()
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]), \
+         mock.patch("kpk.obtain_password", return_value=kpk_env["password"]):
+        result = runner.invoke(kpk.main, ["import", "-f", str(import_file)], input="y")
+    assert result.exit_code == 0
+    assert "mykey" in result.output
+    assert "overwritten" in result.output.lower() or "Imported" in result.output
+
+    # verify the value was updated
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]), \
+         mock.patch("kpk.obtain_password", return_value=kpk_env["password"]):
+        result = runner.invoke(kpk.main, ["get", "--out", "mykey"])
+    assert result.exit_code == 0
+    assert "updated_secret" in result.output
+
+
+def test_cli_import_overwrite_aborted(kpk_env, tmp_path):
+    """import with overlapping keys aborts when user declines."""
+    import_data = {"mykey": "updated_secret"}
+    import_file = tmp_path / "import.json"
+    import_file.write_text(json.dumps(import_data))
+
+    runner = CliRunner()
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]), \
+         mock.patch("kpk.obtain_password", return_value=kpk_env["password"]):
+        result = runner.invoke(kpk.main, ["import", "-f", str(import_file)], input="n")
+    assert result.exit_code == 1
