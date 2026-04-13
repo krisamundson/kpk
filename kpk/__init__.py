@@ -405,6 +405,9 @@ def import_cmd(file):
         logger.error("Expected a JSON object with string keys and string values.")
         sys.exit(1)
 
+    # Pull out __version__ if present; it's metadata, not a secret.
+    import_version = data.pop("__version__", None)
+
     for k, v in data.items():
         if not isinstance(k, str):
             logger.error(f"Key '{k}' is not a string.")
@@ -477,6 +480,8 @@ def import_cmd(file):
             db[k] = {"value": ciphertext, "updated": import_ts}
         else:
             db[k] = entry_make(ciphertext)
+
+    db["__version__"] = DB_VERSION
 
     try:
         db_write(db_path, db)
