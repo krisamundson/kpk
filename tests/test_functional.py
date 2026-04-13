@@ -699,6 +699,84 @@ def test_cli_import_migrates_v2_db(tmp_path):
     assert "oldkey" in db
 
 
+# --- yaml import tests ---
+
+
+def test_cli_import_yaml_from_file(kpk_env, tmp_path):
+    """import --yaml parses YAML documents and extracts user/pass pairs."""
+    yaml_content = """\
+user: alice
+pass: s3cret123
+---
+user: bob
+pass: hunter2
+"""
+    import_file = tmp_path / "creds.yaml"
+    import_file.write_text(yaml_content)
+
+    runner = CliRunner()
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]), \
+         mock.patch("kpk.obtain_password", return_value=kpk_env["password"]):
+        result = runner.invoke(kpk.main, ["import", "--yaml", "-f", str(import_file)])
+    assert result.exit_code == 0
+    assert "Imported 2 key(s)" in result.output
+
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]), \
+         mock.patch("kpk.obtain_password", return_value=kpk_env["password"]):
+        result = runner.invoke(kpk.main, ["get", "--out", "alice"])
+    assert result.exit_code == 0
+    assert "s3cret123" in result.output
+
+
+def test_cli_import_yaml_from_stdin(kpk_env):
+    """import --yaml reads YAML from stdin."""
+    yaml_content = "user: stdinuser\npass: stdinpass\n"
+
+    runner = CliRunner()
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]), \
+         mock.patch("kpk.obtain_password", return_value=kpk_env["password"]):
+        result = runner.invoke(kpk.main, ["import", "--yaml"], input=yaml_content)
+    assert result.exit_code == 0
+    assert "Imported 1 key(s)" in result.output
+
+
+def test_cli_import_yaml_skips_incomplete_docs(kpk_env, tmp_path):
+    """import --yaml skips documents missing user or pass."""
+    yaml_content = """\
+user: alice
+pass: s3cret
+---
+user: nopass
+---
+other: data
+---
+user: bob
+pass: hunter2
+"""
+    import_file = tmp_path / "creds.yaml"
+    import_file.write_text(yaml_content)
+
+    runner = CliRunner()
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]), \
+         mock.patch("kpk.obtain_password", return_value=kpk_env["password"]):
+        result = runner.invoke(kpk.main, ["import", "--yaml", "-f", str(import_file)])
+    assert result.exit_code == 0
+    assert "Imported 2 key(s)" in result.output
+
+
+def test_cli_import_yaml_empty(kpk_env, tmp_path):
+    """import --yaml with no valid user/pass pairs exits with error."""
+    yaml_content = "other: data\n"
+    import_file = tmp_path / "creds.yaml"
+    import_file.write_text(yaml_content)
+
+    runner = CliRunner()
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]):
+        result = runner.invoke(kpk.main, ["import", "--yaml", "-f", str(import_file)])
+    assert result.exit_code == 1
+    assert "Nothing to import" in result.output
+
+
 # --- timestamp tests ---
 
 

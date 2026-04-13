@@ -395,23 +395,38 @@ def export(file):
 
 @click.command(name="import")
 @click.option("--file", "-f", type=click.Path(exists=True), default=None, help="Import from a file instead of stdin.")
-def import_cmd(file):
-    """Import keys and cleartext values from JSON, encrypting them into the database."""
+@click.option("--yaml", "use_yaml", is_flag=True, default=False, help="Parse YAML; extract user:/pass: pairs as key/value.")
+def import_cmd(file, use_yaml):
+    """Import keys and cleartext values from JSON (or YAML with --yaml), encrypting them into the database."""
     if file:
         raw = pathlib.Path(file).read_text()
     else:
-        click.echo("Reading JSON from stdin (Ctrl-D to end):")
+        click.echo(f"Reading {'YAML' if use_yaml else 'JSON'} from stdin (Ctrl-D to end):")
         raw = sys.stdin.read()
 
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON: {e}")
-        sys.exit(1)
+    if use_yaml:
+        docs = list(yaml.safe_load_all(raw))
+        data = {}
+        for i, doc in enumerate(docs):
+            if not isinstance(doc, dict):
+                logger.warning(f"YAML document {i + 1}: not a mapping, skipping.")
+                continue
+            user = doc.get("user")
+            passwd = doc.get("pass")
+            if not user or not passwd:
+                logger.warning(f"YAML document {i + 1}: missing 'user' or 'pass', skipping.")
+                continue
+            data[str(user)] = str(passwd)
+    else:
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON: {e}")
+            sys.exit(1)
 
-    if not isinstance(data, dict):
-        logger.error("Expected a JSON object with string keys and string values.")
-        sys.exit(1)
+        if not isinstance(data, dict):
+            logger.error("Expected a JSON object with string keys and string values.")
+            sys.exit(1)
 
     # Pull out __version__ if present; it's metadata, not a secret.
     import_version = data.pop("__version__", None)
