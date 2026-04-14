@@ -4,7 +4,7 @@
 __author__ = "Kris Amundson"
 __copyright__ = "Copyright (C) 2026 Kris Amundson"
 __license__ = "GPL-3.0-or-later"
-__version__ = "2.4.0"
+__version__ = "2.5.0"
 
 import base64
 import clipboard
@@ -529,11 +529,41 @@ def import_cmd(file, use_yaml):
     logger.info(f"Imported {len(data)} key(s). OK")
 
 
+@click.command()
+@click.argument("pattern", type=str, required=True)
+def search(pattern):
+    """Search key names (case-insensitive substring match)."""
+    db_path = check_path()
+    db = db_setup(db_path)
+
+    pattern_lower = pattern.lower()
+    matches = []
+    for k, v in db.items():
+        if k.startswith("__"):
+            continue
+        if pattern_lower in k.lower():
+            matches.append((k, entry_get_updated(v)))
+
+    if not matches:
+        logger.warning(f"No keys matching '{pattern}'.")
+        sys.exit(2)
+
+    keys = '\n' + f'{"═" * 28} SEARCH {"═" * 28}|{"═" * 3} LAST UPDATED {"═" * 3}\n'
+    for k, ts in matches:
+        if ts:
+            keys += f"{k:<65}{ts}\n"
+        else:
+            keys += f"{k}\n"
+
+    logger.info(keys)
+
+
 main.add_command(delete)
 main.add_command(export)
 main.add_command(import_cmd)
 main.add_command(ls)
 main.add_command(get)
+main.add_command(search)
 main.add_command(set)
 
 # main = cli

@@ -535,6 +535,45 @@ def test_cli_delete_missing_key(kpk_env):
     assert result.exit_code == 2
 
 
+# --- search tests ---
+
+
+def test_cli_search_finds_match(kpk_env):
+    """search finds keys matching the pattern."""
+    runner = CliRunner()
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]):
+        result = runner.invoke(kpk.main, ["search", "mykey"])
+    assert result.exit_code == 0
+    assert "mykey" in result.output
+
+
+def test_cli_search_case_insensitive(kpk_env):
+    """search is case-insensitive."""
+    runner = CliRunner()
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]):
+        result = runner.invoke(kpk.main, ["search", "TSKEY"])
+    assert result.exit_code == 0
+    assert "tskey" in result.output
+
+
+def test_cli_search_partial_match(kpk_env):
+    """search matches substrings."""
+    runner = CliRunner()
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]):
+        result = runner.invoke(kpk.main, ["search", "key"])
+    assert result.exit_code == 0
+    assert "mykey" in result.output
+    assert "tskey" in result.output
+
+
+def test_cli_search_no_match(kpk_env):
+    """search with no matches exits with code 2."""
+    runner = CliRunner()
+    with mock.patch("kpk.check_path", return_value=kpk_env["dbpath"]):
+        result = runner.invoke(kpk.main, ["search", "zzzzz"])
+    assert result.exit_code == 2
+
+
 # --- export tests ---
 
 
