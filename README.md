@@ -27,6 +27,21 @@ That should work before kpk is useful.
 
 This installs kpk in editable mode into your active Python virtual environment, making the `kpk` command available on your PATH.
 
+# Usage
+
+    kpk set <key> <value>       # store a secret
+    kpk set <key> --prompt      # store a secret (hidden input)
+    kpk get <key>               # copy secret to clipboard
+    kpk get <key> --out         # print secret to stdout
+    kpk delete <key>            # remove a secret
+    kpk ls                      # list all keys with timestamps
+    kpk search <pattern>        # case-insensitive key name search
+    kpk export                  # export all secrets as cleartext JSON
+    kpk export --file out.json  # export to file
+    kpk import --file in.json   # import from JSON file
+    kpk import --yaml -f f.yaml # import user/pass pairs from YAML
+    kpk --version               # show version
+
 # Password
 
 Using the gpg-agent that is pre-primed to decrypt files without a
@@ -51,11 +66,29 @@ Normalization is done in the following fashion:
 
 # Encryption
 
-This password is then used to generate a url-friendly base64
-of 32 bytes object that is used as the key for encrypting and
-decrypting the values. This { key: value } dictionary is then
-written to a JSON file on disk in the default kpk directory:
+## Two layers
 
-    $HOME/.kpk/secrets.json
+1. **File-level**: The entire database is GPG-encrypted on disk as
+   `$HOME/.kpk/secrets.json.gpg` (ASCII-armored, encrypted to
+   `--default-recipient-self`).
 
-Keys are not encrypted in this JSON file, only values.
+2. **Value-level**: Individual values are Fernet-encrypted using a key
+   derived from the password in `password.gpg` via HKDF-SHA256.
+
+Keys are visible in the decrypted JSON but not on disk. The DB
+directory can be overridden via `KPK_DBDIR` environment variable.
+
+## DB format (v3)
+
+Entries include timestamps:
+
+    {
+        "__version__": "3",
+        "mykey": {
+            "value": "<fernet ciphertext>",
+            "updated": "2026-04-13T15:30:00Z"
+        }
+    }
+
+Timestamps are used by `ls`, `export`, and `import` (newer entry
+wins on conflict).
