@@ -2,7 +2,7 @@
 
 
 __author__ = "Kris Amundson"
-__copyright__ = "Copyright (C) 2024 Kris Amundson"
+__copyright__ = "Copyright (C) 2026 Kris Amundson"
 __license__ = "GPL-3.0-or-later"
 __version__ = "2.4.0"
 
@@ -309,7 +309,12 @@ def ls():
 
     logger.debug(f"db_path: {db_path}\n")
 
-    keys = "\n═════════════════════ KEYS ══════════════════════\n"
+    _b = """
+    ═════════════════════════ KEYS ══════════════════════════════
+    ACCESS_KEY_ID                                                2026-04-13T20:30:56Z
+    """
+
+    keys = '\n' + f'{"═" * 29} KEYS {"═" * 29}|{"═" * 3} LAST UPDATED {"═" * 3}\n'
     for k, v in db.items():
         if k.startswith("__"):
             continue
