@@ -4,7 +4,7 @@
 __author__ = "Kris Amundson"
 __copyright__ = "Copyright (C) 2026 Kris Amundson"
 __license__ = "GPL-3.0-or-later"
-__version__ = "2.5.0"
+__version__ = "2.5.1"
 
 import base64
 import clipboard
@@ -78,12 +78,34 @@ def gpg_decrypt_file(filepath):
     ).stdout
 
 
-def gpg_encrypt_file(filepath, data):
-    """Encrypt data bytes and write to a GPG file."""
-    subprocess.run(
-        ["gpg", "--yes", "--armor", "-e", "--default-recipient-self", "-o", str(filepath)],
-        input=data, capture_output=True, check=True
+def gpg_recipients_of(filepath):
+    """Return list of key IDs that a GPG-encrypted file was encrypted to."""
+    result = subprocess.run(
+        ["gpg", "--list-packets", "--list-only", str(filepath)],
+        capture_output=True, text=True
     )
+    recipients = []
+    for line in (result.stdout + result.stderr).splitlines():
+        line = line.strip()
+        if line.startswith(":pubkey enc packet:"):
+            parts = line.split("keyid", 1)
+            if len(parts) == 2:
+                recipients.append(parts[1].strip())
+    return recipients
+
+
+def gpg_encrypt_file(filepath, data):
+    """Encrypt data bytes to the same recipients as password.gpg, write to file."""
+    passwordfile = pathlib.Path.home() / ".kpk" / "password.gpg"
+    recipients = gpg_recipients_of(passwordfile)
+    if not recipients:
+        logger.error(f"Could not determine recipient from {passwordfile}.")
+        sys.exit(1)
+
+    args = ["gpg", "--yes", "--armor", "-e", "-o", str(filepath)]
+    for r in recipients:
+        args.extend(["-r", r])
+    subprocess.run(args, input=data, capture_output=True, check=True)
 
 
 def db_write(dbpath, db):
