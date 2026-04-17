@@ -4,7 +4,7 @@
 __author__ = "Kris Amundson"
 __copyright__ = "Copyright (C) 2026 Kris Amundson"
 __license__ = "GPL-3.0-or-later"
-__version__ = "2.5.1"
+__version__ = "2.5.2"
 
 import base64
 import clipboard
@@ -136,6 +136,11 @@ def db_setup(dbpath, migrate=False):
         db = None
 
     if db is None:
+        passwordfile = pathlib.Path.home() / ".kpk" / "password.gpg"
+        if not passwordfile.is_file():
+            logger.error(f"{passwordfile} not found. Create it before initializing a DB.")
+            sys.exit(1)
+
         try:
             db = {"__version__": DB_VERSION}
             dbpath.parent.mkdir(parents=False, exist_ok=True)
@@ -144,7 +149,6 @@ def db_setup(dbpath, migrate=False):
             logger.error(f"Problem creating db. {_e}")
 
         logger.info(f"Initialized new db: {dbpath}")
-        logger.info("Create a password.gpg in this directory to use as encryption key.")
         sys.exit()
 
     db_ver = db.get("__version__")

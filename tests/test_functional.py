@@ -300,24 +300,45 @@ def test_db_setup_rejects_old_version():
 def test_db_setup_creates_new_db():
     """db_setup creates a new db file and exits when none exists."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        dbpath = pathlib.Path(tmpdir) / "secrets.json.gpg"
+        homedir = pathlib.Path(tmpdir)
+        (homedir / ".kpk").mkdir()
+        (homedir / ".kpk" / "password.gpg").write_text("dummy")
+        dbpath = homedir / ".kpk" / "secrets.json.gpg"
 
-        with pytest.raises(SystemExit):
-            kpk.db_setup(dbpath)
+        with mock.patch("pathlib.Path.home", return_value=homedir):
+            with pytest.raises(SystemExit):
+                kpk.db_setup(dbpath)
 
         assert dbpath.exists()
         data = json.load(dbpath.open())
         assert data["__version__"] == "3"
 
 
+def test_db_setup_exits_without_password_gpg():
+    """db_setup exits with error if password.gpg doesn't exist."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        homedir = pathlib.Path(tmpdir)
+        dbpath = homedir / "secrets.json.gpg"
+
+        with mock.patch("pathlib.Path.home", return_value=homedir):
+            with pytest.raises(SystemExit) as pytest_wrapped_e:
+                kpk.db_setup(dbpath)
+        assert pytest_wrapped_e.value.code == 1
+        assert not dbpath.exists()
+
+
 def test_db_setup_invalid_json():
     """db_setup reinitializes when existing file has invalid JSON."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        dbpath = pathlib.Path(tmpdir) / "secrets.json.gpg"
+        homedir = pathlib.Path(tmpdir)
+        (homedir / ".kpk").mkdir()
+        (homedir / ".kpk" / "password.gpg").write_text("dummy")
+        dbpath = homedir / ".kpk" / "secrets.json.gpg"
         dbpath.write_text("not valid json{{{")
 
-        with pytest.raises(SystemExit):
-            kpk.db_setup(dbpath)
+        with mock.patch("pathlib.Path.home", return_value=homedir):
+            with pytest.raises(SystemExit):
+                kpk.db_setup(dbpath)
 
         data = json.load(dbpath.open())
         assert data["__version__"] == "3"
